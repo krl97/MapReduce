@@ -4,7 +4,7 @@ MapReduce is a programming model and an associated implementation for processing
 Programs written in this functional style are automatically parallelized and executed on a large cluster of commodity machines.
 The run-time system takes care of the details of partitioning the input data, scheduling the program’s execution across a set of machines, handling machine failures, and managing the required inter-machine communication.
 
-## Especifications
+## Specifications
 
 A MapReduce System has two important funtions
 
