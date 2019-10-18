@@ -27,4 +27,4 @@ A MapReduce System has two important funtions
     return count 
  ```
 
-                                                    -- DEVELOP VESION --
+                                -- DEVELOP VESION --
