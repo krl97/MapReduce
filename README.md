@@ -26,3 +26,5 @@ A MapReduce System has two important funtions
         count += v
     return count 
  ```
+
+                                                    -- DEVELOP VESION --
