@@ -19,6 +19,7 @@ A MapReduce System has two important funtions
     for word in doc_line_text.split(): 
         res.append((word, 1))
     return res
+ 
  def reduce(word: str, vals: list): 
     count = 0
     for v in vals:
