@@ -3,6 +3,9 @@ process/ikeys/
 process/inputs/
 process/outputs/
 
+#Test Folder
+test/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
