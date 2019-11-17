@@ -102,7 +102,7 @@ class MasterNode(object):
             # build the data
             data = {'task' : 'map',
                     'class' : config.Mapper, #serialized with dill ( this maybe come with a parsing function and local group function)
-                    'file' : config.input_path,
+                    'file' : config.input,
                     'chunk' : self.current_chunk 
                 }
 
@@ -121,3 +121,7 @@ class MasterNode(object):
     #TODO: Get values from network 
     def reduce_task(self):
         pass
+
+if __name__ == "__main__":
+    class MockConfig(object):
+        self.
