@@ -1,5 +1,6 @@
-from utils import zmq_addr
+from .utils import zmq_addr
 from threading import Thread, Semaphore
+import dill
 import zmq
 
 class MasterNode(object):
@@ -21,8 +22,8 @@ class MasterNode(object):
         self.map_routes = []
         self.chunk_size = config.chunk_size # number of lines
         self.current_chunk = (0, self.chunk_size)
-        self.chunks_state = ['pending'] * M
         self.M = MasterNode.map_splitter(self.config.input, self.chunk_size)
+        self.chunks_state = ['pending'] * self.M
 
     def __call__(self):
         #here start thread for incoming message from workers
@@ -59,6 +60,7 @@ class MasterNode(object):
                 res = worker
                 break
         self.semaphore.release()
+        return res
 
     def msg_thread(self):
         while True: #listen messages forever
@@ -88,7 +90,8 @@ class MasterNode(object):
     def send_task(self, worker, data):
         socket_worker = self.zmq_context.socket(zmq.PAIR)
         socket_worker.connect(zmq_addr(worker))
-        socket_worker.send_json(data)
+        data = dill.dumps(data)
+        socket_worker.send(data)
         
         #TODO: add timeout for waiting
         reply = self.socket_task.recv_json()  
@@ -101,17 +104,18 @@ class MasterNode(object):
         if worker:
             # build the data
             data = {'task' : 'map',
-                    'class' : config.Mapper, #serialized with dill ( this maybe come with a parsing function and local group function)
-                    'file' : config.input,
+                    'class' : self.config.mapper, #serialized with dill ( this maybe come with a parsing function and local group function)
+                    'file' : self.config.input,
                     'chunk' : self.current_chunk 
                 }
 
-            reply = self.send(worker, data)
+            reply = self.send_task(worker, data)
 
             if reply['status'] == 'RECV':
+                print(f'REPLY from {worker}')
                 self.semaphore.acquire()
-                self.chunks_state[self.current_chunk[0] / self.chunk_size] = 'in-progress' #set sended chunk
-                self.current_chunk = (self.current_chunk[1], self.current_chunk[1] + self.chunk_size
+                self.chunks_state[int(self.current_chunk[0] / self.chunk_size)] = 'in-progress' #set sended chunk
+                self.current_chunk = (self.current_chunk[1], self.current_chunk[1] + self.chunk_size)
                 self.workers[worker] = 'map-task'
                 self.semaphore.release()
                 return True
@@ -121,7 +125,3 @@ class MasterNode(object):
     #TODO: Get values from network 
     def reduce_task(self):
         pass
-
-if __name__ == "__main__":
-    class MockConfig(object):
-        self.

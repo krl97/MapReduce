@@ -1,4 +1,3 @@
-def base_parsing(content: str):
+def base_parsing(lines):
     """ Parse each line in content and split by '-' to get key-value pair """
-    lines = content.splitlines()
     return [ tuple(line.split(sep='-')) for line in lines ]

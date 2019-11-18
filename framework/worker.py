@@ -3,7 +3,7 @@
     Warning: Ports 8080 and 8081 are reserved for the JobTracker(MasterNode) 
 """
 
-from utils import zmq_addr
+from .utils import zmq_addr
 import dill
 import zmq
 
@@ -25,15 +25,16 @@ class WorkerNode(object):
 
     def __call__(self):
         while True:
-            msg = self.socket.recv_json()
+            msg = self.socket.recv()
+            msg = dill.loads(msg)
             task_id = msg['task']
             task_class = msg['class'] #incoming message contains a str with class code
 
             reply_socket = self.zmq_context.socket(zmq.PAIR)
             reply_socket.connect(self.master_tsk)
             if task_id in ['map', 'reduce']:
-                self.status = 'working'
                 reply_socket.send_json({'status': 'RECV'})
+                print(f'Starting Task {task_id}...')
                 res = self.task(task_id, task_class, msg)
                 self.send_msg(self.master_msg, res)
                 print('Task Ended... waiting for instructions')
@@ -57,19 +58,19 @@ class WorkerNode(object):
             map_res = [] 
             for key, value in pairs:
                 map_res += task_class.map(key, value)
-            map_res = task_class.groupBy(map_res)
-            
+            map_res = task_class.groupby(map_res)
+
             # map_res contains final result... write this in the local disk at moment
-            w = open(f'./map_results/map-{self.addr}', 'x')
-            w.writelines(map_res)
+            w = open(f'./test/map_results/map-{self.idle}', 'w')
+            w.writelines([ f'{ikey}-{ival}\n' for ikey, ival in map_res ])
 
             #build message for master
             msg = {
-                'status' : 'END'
-                'idle' : self.idle
-                'task' : 'map-task'
-                'chunk' : msg['chunk'][0]
-                'route' : f'./map_results/map-{self.addr}'
+                'status' : 'END',
+                'idle' : self.idle,
+                'task' : 'map-task',
+                'chunk' : msg['chunk'][0],
+                'route' : f'./map-{self.idle}'
             }
 
             return msg

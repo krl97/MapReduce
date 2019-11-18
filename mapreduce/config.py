@@ -1,17 +1,18 @@
 """ Provide Configuration Classes for the MapReduce Client """
 
-from tools.parsing import base_parsing
-from tools.groupby import identity_groupBy
+from .tools.parsing import base_parsing
+from .tools.groupby import identity_groupby
 
 class MapReduce(object):
     """ Defines a MapReduce job configuration class composed by a Mapper configuration 
     class, Reducer configuration class and other configuration parameters """
 
-    def __init__(self, input, mapper, reducer, output_folder):
+    def __init__(self, input, mapper, reducer, output_folder, chunk_size = 5):
         self.mapper = mapper
         self.reducer = reducer
         self.input = input
         self.output_folder = output_folder
+        self.chunk_size = chunk_size
         
 class Mapper(object):
     """ Defines a base Mapper configuration class. All Mapper configuration class 
@@ -29,8 +30,8 @@ class Mapper(object):
     def parse(self, data):
         return base_parsing(data)
 
-    def groupBy(self, collection):
-        return identity_groupBy(collection)
+    def groupby(self, collection):
+        return identity_groupby(collection)
 
 class Reducer(object):
     """ Defines a base Reducer configuration class. All Reducer configuration class 

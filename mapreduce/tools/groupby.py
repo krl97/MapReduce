@@ -1,2 +1,2 @@
-def identity_groupBy(self, collection):
+def identity_groupby(collection):
     return collection
