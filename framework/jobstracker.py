@@ -10,9 +10,9 @@ class MasterNode(object):
         
         self.zmq_context = zmq.Context() 
 
-        self.socket_task = self.zmq_context.socket(zmq.PAIR)
+        self.socket_task = self.zmq_context.socket(zmq.PULL)
         self.socket_task.bind(self.addr_task)
-        self.socket_msg = self.zmq_context.socket(zmq.PAIR)
+        self.socket_msg = self.zmq_context.socket(zmq.PULL)
         self.socket_msg.bind(self.addr_msg)
 
         self.config = config
@@ -28,29 +28,33 @@ class MasterNode(object):
     def __call__(self):
         #here start thread for incoming message from workers
         msg_thr = Thread(target=self.msg_thread, name="msg_thread")
-        msg_thr.start()
+        msg_thr.start() 
 
         M = self.M  #get number of map task to send 
 
         # send all map task
-        while M and self.map_task(): 
-            M -= 1
+        while M:
+            if self.map_task(): 
+                M -= 1
+
+        print('-- HERE -- ', M)
+        print(self.chunks_state)
+        print(self.workers)
 
         # wait form map workers
         while True:
-            self.semaphore.acquire()
             if all([state == 'completed' for state in self.chunks_state]):
-                self.semaphore.release()
                 break
-            self.semaphore.release()
 
-        print(self.map_routes)
+        print(self.chunks_state)
+        print(self.workers)
+        print('-- END --')
 
     @staticmethod
     def map_splitter(file, size):
         f = open(file, 'r')
         lines = len(f.readlines())
-        return int(lines / size) + 1
+        return int(lines / size) + (lines % size > 0)
 
     def get_worker(self):
         self.semaphore.acquire()
@@ -64,7 +68,9 @@ class MasterNode(object):
 
     def msg_thread(self):
         while True: #listen messages forever
+            print('T-Waiting')
             msg = self.socket_msg.recv_json()
+            print('T-Process:', msg)
 
             #parse message
             if msg['status'] == 'END':
@@ -88,14 +94,15 @@ class MasterNode(object):
                 print(msg['status'])
 
     def send_task(self, worker, data):
-        socket_worker = self.zmq_context.socket(zmq.PAIR)
+        socket_worker = self.zmq_context.socket(zmq.PUSH)
         socket_worker.connect(zmq_addr(worker))
         data = dill.dumps(data)
         socket_worker.send(data)
         
         #TODO: add timeout for waiting
-        reply = self.socket_task.recv_json()  
-        return reply   
+        #reply = self.socket_task.recv_json()  
+        #return reply   
+        return {'status' : 'RECV'}
 
     def map_task(self):
         """  Assign a map task """
@@ -117,6 +124,8 @@ class MasterNode(object):
                 self.chunks_state[int(self.current_chunk[0] / self.chunk_size)] = 'in-progress' #set sended chunk
                 self.current_chunk = (self.current_chunk[1], self.current_chunk[1] + self.chunk_size)
                 self.workers[worker] = 'map-task'
+                print(self.workers)
+                print(self.chunks_state)
                 self.semaphore.release()
                 return True
 

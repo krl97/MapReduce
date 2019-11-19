@@ -1,6 +1,7 @@
 from framework import MasterNode
 from mapreduce.config import MapReduce, Mapper, Reducer
 import dill
+import os
 
 class WC_Mapper(Mapper):
     def map(self, key, value):
@@ -15,7 +16,9 @@ class WC_Reducer(Reducer):
 
 if __name__ == "__main__":
     workers = ['8082',
-               '8083']
+               '8083',
+               '8084',
+               '8085']
 
     wc_m = WC_Mapper()
     wc_r = WC_Reducer()
