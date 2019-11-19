@@ -12,7 +12,10 @@ class WC_Mapper(Mapper):
 
 class WC_Reducer(Reducer):
     def reduce(self, key, value):
-        pass
+        res = 0
+        for elem in value:
+            res += int(elem)
+        return res
 
 if __name__ == "__main__":
     workers = ['8082',

@@ -23,8 +23,14 @@ class MasterNode(object):
         self.chunk_size = config.chunk_size # number of lines
         self.current_chunk = (0, self.chunk_size)
         self.M = MasterNode.map_splitter(self.config.input, self.chunk_size)
+        self.R = 4 #predefined 4 reduce task
         self.chunks_state = ['pending'] * self.M
+        self.partition_state = ['pending'] * self.R
+        self.partitions = None
+        self.current_partition = 0
         self.ikeys = { }
+
+        self.results = [ ]
 
     def __call__(self):
         #here start thread for incoming message from workers
@@ -33,12 +39,14 @@ class MasterNode(object):
 
         M = self.M  #get number of map task to send 
 
+        print('------------------- MAPPING -------------------')
+
         # send all map task
         while M:
             if self.map_task(): 
                 M -= 1
 
-        print('-- HERE -- ', M)
+        print('<-- ALL MAP TASKS SENDED --> ')
         print(self.chunks_state)
         print(self.workers)
         print(self.map_routes)
@@ -50,10 +58,29 @@ class MasterNode(object):
 
         print(self.chunks_state)
         print(self.workers)
-        print('-- END --')
+        print('-------------------- REDUCE TASKS -------------------')
 
         # reduce
+        self.shuffle()
+        self.partitioning()
 
+        R = self.R
+
+        while R:
+            if self.reduce_task():
+                R -= 1
+
+        while True:
+            if all([state == 'completed' for state in self.partition_state]):
+                break
+
+        # write to output folder
+
+        f = open(f'{self.config.output_folder}/output', 'w')
+        f.write('\n'.join([f'{res[0]}-{res[1]}' for res in self.results]))
+
+        print('------------------ END ------------------')
+        
 
     def shuffle(self):
         for map_file in self.map_routes:
@@ -65,7 +92,17 @@ class MasterNode(object):
                     self.ikeys[k].append(v)
                 except:
                     self.ikeys[k] = [ v ]
+        print('Shuffle Success')
 
+    def partitioning(self):
+        inter = list(self.ikeys.keys())
+        part = [ { } for _ in range(self.R) ]
+
+        for hash, key in enumerate(inter):
+            part[hash % self.R][key] = self.ikeys[key]
+
+        self.partitions = part
+        print('Partition Success')
 
     @staticmethod
     def map_splitter(file, size):
@@ -74,35 +111,40 @@ class MasterNode(object):
         return int(lines / size) + (lines % size > 0)
 
     def get_worker(self):
-        self.semaphore.acquire()
         res = None
         for worker, state in self.workers.items():
             if state in ['non-task', 'completed']:
-        def shuffle():
                 res = worker
                 break
-        self.semaphore.release()
         return res
 
     def msg_thread(self):
         while True: #listen messages forever
-            print('T-Waiting')
             msg = self.socket_msg.recv_json()
-            print('T-Process:', msg)
-
+        
             #parse message
             if msg['status'] == 'END':
                 worker = msg['idle']
                 task = msg['task']
-                chunk_idx = msg['chunk']
 
                 if task == 'map-task':
+                    chunk_idx = msg['chunk']
                     self.semaphore.acquire()
                     self.workers[worker] = 'completed'
                     self.chunks_state[chunk_idx] = 'completed'
                     self.map_routes.append(msg['route'])
                     self.semaphore.release()
                     print(f'Worker: {worker} end map-task')
+                
+                elif task == 'reduce-task':
+                    partition = msg['partition']
+                    self.semaphore.acquire()
+                    self.workers[worker] = 'completed'
+                    self.partition_state[partition] = 'completed'
+                    self.results += msg['result']
+                    self.semaphore.release()
+                    print(f'Worker: {worker} end end-task')
+
                 else:
                     #other task
                     print(f'Worker talking about: {task}')
@@ -116,11 +158,6 @@ class MasterNode(object):
         socket_worker.connect(zmq_addr(worker))
         data = dill.dumps(data)
         socket_worker.send(data)
-        
-        #TODO: add timeout for waiting
-        #reply = self.socket_task.recv_json()  
-        #return reply   
-        return {'status' : 'RECV'}
 
     def map_task(self):
         """  Assign a map task """
@@ -134,21 +171,41 @@ class MasterNode(object):
                     'chunk' : self.current_chunk 
                 }
 
-            reply = self.send_task(worker, data)
+            self.send_task(worker, data)
 
-            if reply['status'] == 'RECV':
-                print(f'REPLY from {worker}')
-                self.semaphore.acquire()
-                self.chunks_state[int(self.current_chunk[0] / self.chunk_size)] = 'in-progress' #set sended chunk
-                self.current_chunk = (self.current_chunk[1], self.current_chunk[1] + self.chunk_size)
-                self.workers[worker] = 'map-task'
-                print(self.workers)
-                print(self.chunks_state)
-                self.semaphore.release()
-                return True
+            print(f'SENDED to: {worker}')
+            self.semaphore.acquire()
+            self.chunks_state[int(self.current_chunk[0] / self.chunk_size)] = 'in-progress' #set sended chunk
+            self.current_chunk = (self.current_chunk[1], self.current_chunk[1] + self.chunk_size)
+            self.workers[worker] = 'map-task'
+            print(self.workers)
+            print(self.chunks_state)
+            self.semaphore.release()
+            return True
 
         return False
 
-    #TODO: Get values from network 
     def reduce_task(self):
-        pass
+        """ Assign a reduce task """
+        worker = self.get_worker()
+
+        if worker:
+            # build message
+            data = {
+                'task': 'reduce',
+                'class': self.config.reducer,
+                'partition': self.current_partition,
+                'ikeys': self.partitions[self.current_partition]
+            }
+
+            self.send_task(worker, data)
+            self.semaphore.acquire()
+            self.partition_state[self.current_partition] = 'in-progress'
+            self.current_partition += 1
+            self.workers[worker] = 'reduce-task'
+            print(self.workers)
+            print(self.partition_state)
+            self.semaphore.release()
+            return True
+
+        return False

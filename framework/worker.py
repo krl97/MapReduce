@@ -33,14 +33,12 @@ class WorkerNode(object):
             reply_socket = self.zmq_context.socket(zmq.PUSH)
             reply_socket.connect(self.master_tsk)
             if task_id in ['map', 'reduce']:
-                #reply_socket.send_json({'status': 'RECV'})
                 print(f'Starting Task {task_id}...')
                 res = self.task(task_id, task_class, msg)
                 self.send_msg(self.master_msg, res)
                 print('Task Ended... waiting for instructions')
             else:
                 print('Unknown task :( \n Response a fail submit')
-                #reply_socket.send_json({'status' : 'FAIL'})
 
     def send_msg(self, addr, msg):
         sock_msg = self.zmq_context.socket(zmq.PUSH)
@@ -66,8 +64,7 @@ class WorkerNode(object):
 
             # map_res contains final result... write this in the local disk at moment
             w = open(f'./test/map_results/map-{self.idle}-{idx}', 'w')
-            w.writelines([ f'{ikey}-{ival}' for ikey, ival in map_res ])
-
+            w.write('\n'.join([ f'{ikey}-{ival}' for ikey, ival in map_res ]))
 
             # build message for master
             msg = {
@@ -75,13 +72,28 @@ class WorkerNode(object):
                 'idle' : self.idle,
                 'task' : 'map-task',
                 'chunk' : idx ,
-                'route' : f'./map-{self.idle}'
+                'route' : f'./test/map_results/map-{self.idle}-{idx}'
             }
 
             return msg
 
         elif task_id == 'reduce':
-            pass
+            res = []
+            idata = msg['ikeys']
+            for key, it in idata.items():
+                res.append((key, task_class.reduce(key, it)))
+            
+            print(msg['partition'])
+
+            msg = {
+                'status' : 'END',
+                'idle' : self.idle,
+                'task' : 'reduce-task',
+                'partition' : msg['partition'],
+                'result' : res
+            }
+
+            return msg
 
         # check bad use line
         print('Oops...')
