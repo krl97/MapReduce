@@ -24,6 +24,7 @@ class MasterNode(object):
         self.current_chunk = (0, self.chunk_size)
         self.M = MasterNode.map_splitter(self.config.input, self.chunk_size)
         self.chunks_state = ['pending'] * self.M
+        self.ikeys = { }
 
     def __call__(self):
         #here start thread for incoming message from workers
@@ -40,8 +41,9 @@ class MasterNode(object):
         print('-- HERE -- ', M)
         print(self.chunks_state)
         print(self.workers)
+        print(self.map_routes)
 
-        # wait form map workers
+        # wait for map workers
         while True:
             if all([state == 'completed' for state in self.chunks_state]):
                 break
@@ -49,6 +51,21 @@ class MasterNode(object):
         print(self.chunks_state)
         print(self.workers)
         print('-- END --')
+
+        # reduce
+
+
+    def shuffle(self):
+        for map_file in self.map_routes:
+            f = open(map_file)
+            keys = f.readlines()
+            inters = [tuple(line.split('-')) for line in keys]
+            for k, v in inters:
+                try:
+                    self.ikeys[k].append(v)
+                except:
+                    self.ikeys[k] = [ v ]
+
 
     @staticmethod
     def map_splitter(file, size):
@@ -61,6 +78,7 @@ class MasterNode(object):
         res = None
         for worker, state in self.workers.items():
             if state in ['non-task', 'completed']:
+        def shuffle():
                 res = worker
                 break
         self.semaphore.release()

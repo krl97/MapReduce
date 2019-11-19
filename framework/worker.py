@@ -66,10 +66,10 @@ class WorkerNode(object):
 
             # map_res contains final result... write this in the local disk at moment
             w = open(f'./test/map_results/map-{self.idle}-{idx}', 'w')
-            w.writelines([ f'{ikey}-{ival}\n' for ikey, ival in map_res ])
+            w.writelines([ f'{ikey}-{ival}' for ikey, ival in map_res ])
 
 
-            #build message for master
+            # build message for master
             msg = {
                 'status' : 'END',
                 'idle' : self.idle,
