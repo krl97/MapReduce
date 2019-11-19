@@ -29,7 +29,7 @@ if __name__ == "__main__":
     mapper = dill.dumps(wc_m)
     reducer = dill.dumps(wc_r)
 
-    config = MapReduce('./test/input', mapper, reducer, './test/')
+    config = MapReduce('./input', mapper, reducer, './test/')
 
     master = MasterNode(workers, config)
 
