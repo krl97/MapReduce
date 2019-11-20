@@ -26,10 +26,7 @@ if __name__ == "__main__":
     wc_m = WC_Mapper()
     wc_r = WC_Reducer()
 
-    mapper = dill.dumps(wc_m)
-    reducer = dill.dumps(wc_r)
-
-    config = MapReduce('./input', mapper, reducer, './test/')
+    config = MapReduce('./input', wc_m, wc_r, './test/')
 
     master = MasterNode(workers, config)
 

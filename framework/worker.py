@@ -30,8 +30,6 @@ class WorkerNode(object):
             task_id = msg['task']
             task_class = msg['class'] #incoming message contains a str with class code
 
-            # reply_socket = self.zmq_context.socket(zmq.PUSH)
-            # reply_socket.connect(self.master_tsk)
             if task_id in ['map', 'reduce']:
                 print(f'Starting Task {task_id}...')
                 res = self.task(task_id, task_class, msg)
@@ -62,8 +60,7 @@ class WorkerNode(object):
 
             size = (msg['chunk'][1] - msg['chunk'][0])
             idx = int(msg['chunk'][0] / size)
-            # print(idx)
-
+            
             # map_res contains final result... write this in the local disk at moment
             w = open(f'./test/map_results/map-{self.idle}-{idx}', 'w')
             w.write('\n'.join([ f'{ikey}-{ival}' for ikey, ival in map_res ]))
@@ -85,8 +82,6 @@ class WorkerNode(object):
             for key, it in idata.items():
                 res.append((key, task_class.reduce(key, it)))
             
-            # print(msg['partition'])
-
             msg = {
                 'status' : 'END',
                 'idle' : self.idle,

@@ -22,13 +22,17 @@ class MasterNode(object):
         self.workers = { worker : 'non-task' for worker in workers }
         self.map_routes = []
         self.chunk_size = config.chunk_size # number of lines
-        self.current_chunk = (0, self.chunk_size)
+        
+        self.current_chunk = 0
+        self.current_partition = 0
+
         self.M = MasterNode.map_splitter(self.config.input, self.chunk_size)
-        self.R = 4 #predefined 4 reduce task
+        
         self.chunks_state = ['pending'] * self.M
         self.partition_state = ['pending'] * self.R
+
         self.partitions = None
-        self.current_partition = 0
+
         self.ikeys = { }
 
         self.results = [ ]
@@ -48,10 +52,8 @@ class MasterNode(object):
                 M -= 1
 
         print('<-- ALL MAP TASKS SENDED --> ')
-        # print(self.chunks_state)
         print(self.workers)
-        # print(self.map_routes)
-
+        
         # wait for map workers
         while True:
             self.semaphore.acquire()
@@ -60,8 +62,6 @@ class MasterNode(object):
                 break
             self.semaphore.release()            
 
-        # print(self.chunks_state)
-        # print(self.workers)
         print('-------------------- REDUCE TASKS -------------------')
 
         # reduceTrue
@@ -132,10 +132,8 @@ class MasterNode(object):
 
     def msg_thread(self):
         while True: #listen messages forever
-            # print('T - Wait', self.workers)
             msg = self.socket_msg.recv_json()
-            # print('T - Process')
-
+            
             #parse message
             if msg['status'] == 'END':
                 worker = msg['idle']
@@ -216,8 +214,6 @@ class MasterNode(object):
             self.partition_state[self.current_partition] = 'in-progress'
             self.current_partition += 1
             self.workers[worker] = 'reduce-task'
-            # print(self.workers)
-            # print(self.partition_state)
             self.semaphore.release()
             return True
 
