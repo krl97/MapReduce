@@ -1,6 +1,7 @@
 from .utils import zmq_addr
 from threading import Thread, Semaphore
 import dill
+import os
 import zmq
 
 class MasterNode(object):
@@ -47,20 +48,23 @@ class MasterNode(object):
                 M -= 1
 
         print('<-- ALL MAP TASKS SENDED --> ')
-        print(self.chunks_state)
+        # print(self.chunks_state)
         print(self.workers)
-        print(self.map_routes)
+        # print(self.map_routes)
 
         # wait for map workers
         while True:
+            self.semaphore.acquire()
             if all([state == 'completed' for state in self.chunks_state]):
+                self.semaphore.release()
                 break
+            self.semaphore.release()            
 
-        print(self.chunks_state)
-        print(self.workers)
+        # print(self.chunks_state)
+        # print(self.workers)
         print('-------------------- REDUCE TASKS -------------------')
 
-        # reduce
+        # reduceTrue
         self.shuffle()
         self.partitioning()
 
@@ -71,8 +75,11 @@ class MasterNode(object):
                 R -= 1
 
         while True:
+            self.semaphore.acquire()
             if all([state == 'completed' for state in self.partition_state]):
+                self.semaphore.release()
                 break
+            self.semaphore.release()
 
         # write to output folder
 
@@ -81,6 +88,9 @@ class MasterNode(object):
 
         print('------------------ END ------------------')
         
+        for worker in self.workers:
+            self.send_task(worker, {'task': 'shutdown', 'class' : None })
+
 
     def shuffle(self):
         for map_file in self.map_routes:
@@ -111,17 +121,21 @@ class MasterNode(object):
         return int(lines / size) + (lines % size > 0)
 
     def get_worker(self):
+        self.semaphore.acquire()
         res = None
         for worker, state in self.workers.items():
             if state in ['non-task', 'completed']:
                 res = worker
                 break
+        self.semaphore.release()
         return res
 
     def msg_thread(self):
         while True: #listen messages forever
+            # print('T - Wait', self.workers)
             msg = self.socket_msg.recv_json()
-        
+            # print('T - Process')
+
             #parse message
             if msg['status'] == 'END':
                 worker = msg['idle']
@@ -143,7 +157,7 @@ class MasterNode(object):
                     self.partition_state[partition] = 'completed'
                     self.results += msg['result']
                     self.semaphore.release()
-                    print(f'Worker: {worker} end end-task')
+                    print(f'Worker: {worker} end reduce-task')
 
                 else:
                     #other task
@@ -175,11 +189,10 @@ class MasterNode(object):
 
             print(f'SENDED to: {worker}')
             self.semaphore.acquire()
-            self.chunks_state[int(self.current_chunk[0] / self.chunk_size)] = 'in-progress' #set sended chunk
+            if self.chunks_state[int(self.current_chunk[0] / self.chunk_size)] != 'completed':
+                self.chunks_state[int(self.current_chunk[0] / self.chunk_size)] = 'in-progress'  #set sended chunk
             self.current_chunk = (self.current_chunk[1], self.current_chunk[1] + self.chunk_size)
             self.workers[worker] = 'map-task'
-            print(self.workers)
-            print(self.chunks_state)
             self.semaphore.release()
             return True
 
@@ -203,8 +216,8 @@ class MasterNode(object):
             self.partition_state[self.current_partition] = 'in-progress'
             self.current_partition += 1
             self.workers[worker] = 'reduce-task'
-            print(self.workers)
-            print(self.partition_state)
+            # print(self.workers)
+            # print(self.partition_state)
             self.semaphore.release()
             return True
 

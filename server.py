@@ -35,3 +35,5 @@ if __name__ == "__main__":
 
     #actually you must run clients first :(
     master()
+
+    print('Server get control again')
