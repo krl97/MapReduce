@@ -14,3 +14,8 @@ def chunks(file, size):
     lines = f.readlines()
     chs = chunked(lines, size)
     return enumerate(chs)
+
+def dict_tuple(d: dict, key):
+    try:
+        return 
+    except:

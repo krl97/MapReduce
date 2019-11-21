@@ -1,4 +1,5 @@
 from .utils import zmq_addr
+from .scheduler import Scheduler, Worker, JTask
 from threading import Thread, Semaphore
 import dill
 import os
@@ -20,33 +21,14 @@ class MasterNode(object):
         self.config = config
         self.semaphore = Semaphore()
 
-        self.workers = { worker : 'non-task' for worker in workers }
-        self.map_routes = []
-        self.chunk_size = config.chunk_size # number of lines
+        self.scheduler = Scheduler(config.input, config.chunk_size)
         
-        self.current_chunk = 0
-        self.current_partition = 0
-
-        self.M = MasterNode.map_splitter(self.config.input, self.chunk_size)
-        self.R = 4
-
-        self.chunks_state = ['pending'] * self.M
-        self.partition_state = ['pending'] * self.R
-
-        self.partitions = None
-
-        self.ikeys = { }
-
         self.results = [ ]
-
-    def ()
 
     def __call__(self):
         #here start thread for incoming message from workers
         msg_thr = Thread(target=self.msg_thread, name="msg_thread")
         msg_thr.start() 
-
-        M = self.M  #get number of map task to send 
 
         print('------------------- MAPPING -------------------')
 
@@ -117,101 +99,31 @@ class MasterNode(object):
         self.partitions = part
         print('Partition Success')
 
-    def get_worker(self):
-        self.semaphore.acquire()
-        res = None
-        for worker, state in self.workers.items():
-            if state in ['non-task', 'completed']:
-                res = worker
-                break
-        self.semaphore.release()
-        return res
-
     def msg_thread(self):
         while True: #listen messages forever
-            msg = self.socket_msg.recv_json()
+            command, msg = self.socket_msg.recv_multipart()
             
-            #parse message
-            if msg['status'] == 'END':
-                worker = msg['idle']
+            if command == 'HELLO':
+                worker = Worker(msg['idle'], msg['addr'])
+                self.scheduler.register_worker(worker, msg['idle'])
+                self.send_code(worker.addr)
+
+            elif command == 'DONE':
                 task = msg['task']
-
-                if task == 'map-task':
-                    chunk_idx = msg['chunk']
-                    self.semaphore.acquire()
-                    self.workers[worker] = 'completed'
-                    self.chunks_state[chunk_idx] = 'completed'
-                    self.map_routes.append(msg['route'])
-                    self.semaphore.release()
-                    print(f'Worker: {worker} end map-task')
-                
-                elif task == 'reduce-task':
-                    partition = msg['partition']
-                    self.semaphore.acquire()
-                    self.workers[worker] = 'completed'
-                    self.partition_state[partition] = 'completed'
-                    self.results += msg['result']
-                    self.semaphore.release()
-                    print(f'Worker: {worker} end reduce-task')
-
-                else:
-                    #other task
-                    print(f'Worker talking about: {task}')
-
+                resp = msg['response']
+                self.scheduler.submit_task(task, resp)
+            
             else:
                 # report error
-                print(msg['status'])
+                print(command)
+                
+    def send_code(self, addr):
+        sock = self.zmq_context.socket(zmq.PUSH)
+        sock.connect(zmq_addr(addr))
+        sock.send_multipart(['CODE', { 'mapper' : self.config.mapper, 'reducer' : self.config.reducer }])
 
     def send_task(self, worker, data):
         socket_worker = self.zmq_context.socket(zmq.PUSH)
         socket_worker.connect(zmq_addr(worker))
         data = dill.dumps(data)
         socket_worker.send(data)
-
-    def map_task(self):
-        """  Assign a map task """
-        worker = self.get_worker()
-
-        if worker:
-            # build the data
-            data = {'task' : 'map',
-                    'class' : self.config.mapper, #serialized with dill ( this maybe come with a parsing function and local group function)
-                    'file' : self.config.input,
-                    'chunk' : self.current_chunk 
-                }
-
-            self.send_task(worker, data)
-
-            print(f'SENDED to: {worker}')
-            self.semaphore.acquire()
-            if self.chunks_state[int(self.current_chunk[0] / self.chunk_size)] != 'completed':
-                self.chunks_state[int(self.current_chunk[0] / self.chunk_size)] = 'in-progress'  #set sended chunk
-            self.current_chunk = (self.current_chunk[1], self.current_chunk[1] + self.chunk_size)
-            self.workers[worker] = 'map-task'
-            self.semaphore.release()
-            return True
-
-        return False
-
-    def reduce_task(self):
-        """ Assign a reduce task """
-        worker = self.get_worker()
-
-        if worker:
-            # build message
-            data = {
-                'task': 'reduce',
-                'class': self.config.reducer,
-                'partition': self.current_partition,
-                'ikeys': self.partitions[self.current_partition]
-            }
-
-            self.send_task(worker, data)
-            self.semaphore.acquire()
-            self.partition_state[self.current_partition] = 'in-progress'
-            self.current_partition += 1
-            self.workers[worker] = 'reduce-task'
-            self.semaphore.release()
-            return True
-
-        return False
