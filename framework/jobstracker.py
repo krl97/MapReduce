@@ -34,7 +34,7 @@ class MasterNode(object):
 
         # send all map task
         while M:
-            if self.map_task(): 
+            if self.map_task():
                 M -= 1
 
         print('<-- ALL MAP TASKS SENDED --> ')
@@ -116,7 +116,7 @@ class MasterNode(object):
             else:
                 # report error
                 print(command)
-                
+
     def send_code(self, addr):
         sock = self.zmq_context.socket(zmq.PUSH)
         sock.connect(zmq_addr(addr))

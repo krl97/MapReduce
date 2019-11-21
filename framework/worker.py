@@ -8,9 +8,11 @@ import dill
 import zmq
 
 class WorkerNode(object):
-    def __init__(self, addr):
-        self.addr = zmq_addr(addr)
-        self.idle = addr
+    def __init__(self, addr, idle):
+        self.addr = addr
+        
+        assert idle > 0 'The worker idle must be positive'      
+        self.idle = idle
 
         # predefined master directions
         self.master_pong = zmq_addr(8080)
@@ -18,15 +20,30 @@ class WorkerNode(object):
 
         self.zmq_context = zmq.Context()
 
-        self.status = 'non-task'
+        self.mapper = None
+        self.reducer = None
 
         self.socket = self.zmq_context.socket(zmq.PULL)
         self.socket.bind(self.addr)
 
     def __call__(self):
         while True:
-            msg = self.socket.recv()
-            msg = dill.loads(msg)
+            self.say_hello()
+            command, msg = self.socket.recv_multipart()
+            
+            if command == 'CODE':
+                self.mapper = dill.loads(msg['mapper'])
+                self.reducer = dill.loads(msg['reducer'])
+
+            elif command == 'SHUTDOWN':
+                break
+
+            elif command == 'TASK':
+                ...
+            
+            else:
+                pass
+
             task_id = msg['task']
             task_class = msg['class'] #incoming message contains a str with class code
 
@@ -40,10 +57,10 @@ class WorkerNode(object):
             else:
                 print('Unknown task :( \n Response a fail submit')
 
-    def send_msg(self, addr, msg):
-        sock_msg = self.zmq_context.socket(zmq.PUSH)
-        sock_msg.connect(self.master_msg)
-        sock_msg.send_json(msg)
+    def say_hello(self):
+        sock = self.zmq_context.socket(zmq.PUSH)
+        sock.connect(self.master_msg)
+        sock.send_multipart('HELLO', {'addr' : self.addr, 'idle' : self.idle })
 
     def task(self, task_id, task_class, msg):
         task_class = dill.loads(task_class)

@@ -23,7 +23,7 @@ class Scheduler(object):
         self.ikeys = [ ]
 
     def register_worker(self, worker, idle):
-        """ Register a new worker in the scheduler to receive task.
+        """ Register a new worker in the scheduler to receive task,
         register(worker, 0) delete the worker from the scheduler """
 
         if not idle:
@@ -32,7 +32,7 @@ class Scheduler(object):
             self.workers.setdefault(worker, None)
     
     def is_registered(self, worker):
-        """ Returns True if the worker is register """
+        """ Returns True if the worker is registered """
 
         return not self.workers.keys().isdisjoint([ worker ])
 
@@ -41,14 +41,15 @@ class Scheduler(object):
         worker, task """
 
         worker = self._get_worker()
-
-        try:
-            ntask = self.pendings.pop(0)
-            self.workers[worker] = ntask
-            self.tasks[ntask] = INPROGRESS
-            return worker, self.tasks[ntask]
-        except:
-            return None
+        
+        if worker:
+            try:
+                ntask = self.pendings.pop(0)
+                self.workers[worker] = ntask
+                self.tasks[ntask] = INPROGRESS
+                return worker, self.tasks[ntask]
+            except:
+                return None
 
     def _get_worker(self):
         for worker, status in self.workers.items():
