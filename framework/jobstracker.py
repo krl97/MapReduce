@@ -2,17 +2,18 @@ from .utils import zmq_addr
 from threading import Thread, Semaphore
 import dill
 import os
+import time
 import zmq
 
 class MasterNode(object):
     def __init__(self, workers, config):
-        self.addr_task = zmq_addr(8080)
+        self.addr_pong = zmq_addr(8080)
         self.addr_msg = zmq_addr(8081)
         
         self.zmq_context = zmq.Context() 
 
-        self.socket_task = self.zmq_context.socket(zmq.PULL)
-        self.socket_task.bind(self.addr_task)
+        self.socket_pong = self.zmq_context.socket(zmq.PULL)
+        self.socket_pong.bind(self.addr_task)
         self.socket_msg = self.zmq_context.socket(zmq.PULL)
         self.socket_msg.bind(self.addr_msg)
 
@@ -27,7 +28,8 @@ class MasterNode(object):
         self.current_partition = 0
 
         self.M = MasterNode.map_splitter(self.config.input, self.chunk_size)
-        
+        self.R = 4
+
         self.chunks_state = ['pending'] * self.M
         self.partition_state = ['pending'] * self.R
 
@@ -36,6 +38,8 @@ class MasterNode(object):
         self.ikeys = { }
 
         self.results = [ ]
+
+    def ()
 
     def __call__(self):
         #here start thread for incoming message from workers
@@ -91,7 +95,6 @@ class MasterNode(object):
         for worker in self.workers:
             self.send_task(worker, {'task': 'shutdown', 'class' : None })
 
-
     def shuffle(self):
         for map_file in self.map_routes:
             f = open(map_file)
@@ -113,12 +116,6 @@ class MasterNode(object):
 
         self.partitions = part
         print('Partition Success')
-
-    @staticmethod
-    def map_splitter(file, size):
-        f = open(file, 'r')
-        lines = len(f.readlines())
-        return int(lines / size) + (lines % size > 0)
 
     def get_worker(self):
         self.semaphore.acquire()

@@ -1,3 +1,5 @@
+from more_itertools import chunked
+
 def zmq_addr(port, transport=None, host=None):
     if host is None:
         host = '127.0.0.1'
@@ -6,3 +8,9 @@ def zmq_addr(port, transport=None, host=None):
         transport = 'tcp'
 
     return f'{transport}://{host}:{port}'
+
+def chunks(file, size):
+    f = open(file, 'r')
+    lines = f.readlines()
+    chs = chunked(lines, size)
+    return enumerate(chs)

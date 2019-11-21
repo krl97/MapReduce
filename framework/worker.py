@@ -13,7 +13,7 @@ class WorkerNode(object):
         self.idle = addr
 
         # predefined master directions
-        self.master_tsk = zmq_addr(8080)
+        self.master_pong = zmq_addr(8080)
         self.master_msg = zmq_addr(8081)
 
         self.zmq_context = zmq.Context()
