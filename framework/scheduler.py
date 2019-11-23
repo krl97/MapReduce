@@ -17,36 +17,35 @@ class Scheduler(object):
 
         self.workers = { } # Worker -> Task(str)
 
-        self.tasks = { JTask(i, 'map', {'chunk' : chunk, 'chunk_idx' : i }) : PENDING for i, chunk in chs } 
-        self.pendings = [t.id for t in list(self.tasks.keys())]
+        self.tasks = { str(i): JTask(str(i), 'map', {'chunk': chunk, 'chunk_idx': i }) for i, chunk in chs } 
+        self.tasks_state = { t.id: PENDING  for t in list(self.tasks.keys()) }
+        self.tasks_pending = [t.id for t in list(self.tasks.keys())]
 
         self.ikeys = [ ]
 
     def register_worker(self, worker, idle):
         """ Register a new worker in the scheduler to receive task,
-        register(worker, 0) delete the worker from the scheduler """
-
+        register(worker, 0) delete the worker from the scheduler 
+        """
         if not idle:
-            self.remove_worker(idle)
+            self.remove_worker(worker.idle)
         else:
             self.workers.setdefault(worker, None)
     
     def is_registered(self, worker):
         """ Returns True if the worker is registered """
-
         return not self.workers.keys().isdisjoint([ worker ])
 
     def next_task(self):
         """ Assign the next task to a availabe worker, returns a tuple 
         worker, task """
-
         worker = self._get_worker()
-        
+
         if worker:
             try:
                 ntask = self.pendings.pop(0)
                 self.workers[worker] = ntask
-                self.tasks[ntask] = INPROGRESS
+                self.tasks_state[ntask] = INPROGRESS
                 return worker, self.tasks[ntask]
             except:
                 return None
@@ -56,16 +55,15 @@ class Scheduler(object):
             if not status:
                 return worker
 
-    def submit_task(self, task, msg):
+    def submit_task(self, task_id, msg):
         """ Submit a message to the scheduler from a socket to be processed """
-
         try:
-            state = self.tasks[task]
+            state = self.tasks_state[task_id]
             if state == COMPLETED:
                 return
-            func = f'{task.type}_task'
+            func = f'{self.tasks[task_id].type}_task'
             self.__dict__[func](msg)
-            self.tasks[task] = COMPLETED
+            self.tasks_state[task_id] = COMPLETED
         except:
             pass
 
@@ -76,15 +74,15 @@ class Scheduler(object):
     def reduce_task(self, msg):
         pass
 
-    def _remove_worker(self, idle):
+    def remove_worker(self, idle):
         task = self.workers.pop(idle)
         if task:
-            self.tasks[task] = PENDING
+            self.tasks_state[task] = PENDING
             self.pendings.append(task)
 
 class JTask(object):
     """ Represents a Job Task created for the Scheduler """
-    
+
     def __init__(self, task_id, type, body):
         self.task_id = task_id
         self.type = type

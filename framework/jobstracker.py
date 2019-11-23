@@ -1,4 +1,4 @@
-from .utils import zmq_addr
+from .utils import zmq_addr, msg_deserialize, msg_serialize
 from .scheduler import Scheduler, Worker, JTask
 from threading import Thread, Semaphore
 import dill
@@ -26,18 +26,18 @@ class MasterNode(object):
         self.results = [ ]
 
     def __call__(self):
-        #here start thread for incoming message from workers
+        # here start thread for incoming message from workers
         msg_thr = Thread(target=self.msg_thread, name="msg_thread")
         msg_thr.start() 
 
-        print('------------------- MAPPING -------------------')
+        print('------------------- MAPPING --------------------')
 
         # send all map task
         while M:
             if self.map_task():
                 M -= 1
 
-        print('<-- ALL MAP TASKS SENDED --> ')
+        print('<-- ALL MAP TASKS SENDED -->')
         print(self.workers)
         
         # wait for map workers
@@ -101,12 +101,12 @@ class MasterNode(object):
 
     def msg_thread(self):
         while True: #listen messages forever
-            command, msg = self.socket_msg.recv_multipart()
+            command, msg = self.socket_msg.recv_serialized(msg_deserialize)
             
             if command == 'HELLO':
                 worker = Worker(msg['idle'], msg['addr'])
                 self.scheduler.register_worker(worker, msg['idle'])
-                self.send_code(worker.addr)
+                self.send_code(worker)
 
             elif command == 'DONE':
                 task = msg['task']
@@ -117,13 +117,13 @@ class MasterNode(object):
                 # report error
                 print(command)
 
-    def send_code(self, addr):
+    def send_code(self, new_worker):
         sock = self.zmq_context.socket(zmq.PUSH)
-        sock.connect(zmq_addr(addr))
-        sock.send_multipart(['CODE', { 'mapper' : self.config.mapper, 'reducer' : self.config.reducer }])
+        sock.connect(zmq_addr(new_worker.addr))
+        sock.send_serialized(['CODE', { 'mapper' : self.config.mapper, 'reducer' : self.config.reducer }], msg_serialize)
+        sock.close()
 
-    def send_task(self, worker, data):
+    def send_task(self, worker, task):
         socket_worker = self.zmq_context.socket(zmq.PUSH)
-        socket_worker.connect(zmq_addr(worker))
-        data = dill.dumps(data)
-        socket_worker.send(data)
+        socket_worker.connect(zmq_addr(worker.addr))
+        socket_worker.send_serialized(['TASK', {'task': task])

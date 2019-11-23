@@ -1,4 +1,5 @@
 from more_itertools import chunked
+import dill
 
 def zmq_addr(port, transport=None, host=None):
     if host is None:
@@ -15,7 +16,8 @@ def chunks(file, size):
     chs = chunked(lines, size)
     return enumerate(chs)
 
-def dict_tuple(d: dict, key):
-    try:
-        return 
-    except:
+def msg_serialize(objects: list):
+    return [dill.dumps(obj) for obj in objects]
+
+def msg_deserialize(frames: list):
+    return tuple(dill.loads(frame) for frame in frames)

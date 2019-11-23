@@ -3,7 +3,7 @@
     Warning: Ports 8080 and 8081 are reserved for the JobTracker(MasterNode) 
 """
 
-from .utils import zmq_addr
+from .utils import zmq_addr, msg_deserialize, msg_serialize
 import dill
 import zmq
 
@@ -23,6 +23,8 @@ class WorkerNode(object):
         self.mapper = None
         self.reducer = None
 
+        self.map_buffer = [ ]
+
         self.socket = self.zmq_context.socket(zmq.PULL)
         self.socket.bind(self.addr)
 
@@ -39,28 +41,29 @@ class WorkerNode(object):
                 break
 
             elif command == 'TASK':
-                ...
-            
+                task = msg['task']
+                func = f'{task.type}_task'
+                res = self.__dict__[func][task.body]
+
             else:
                 pass
-
-            task_id = msg['task']
-            task_class = msg['class'] #incoming message contains a str with class code
-
-            if task_id in ['map', 'reduce']:
-                print(f'Starting Task {task_id}...')
-                res = self.task(task_id, task_class, msg)
-                self.send_msg(self.master_msg, res)
-                print('Task Ended... waiting for instructions')
-            elif task_id == 'shutdown':
-                break
-            else:
-                print('Unknown task :( \n Response a fail submit')
 
     def say_hello(self):
         sock = self.zmq_context.socket(zmq.PUSH)
         sock.connect(self.master_msg)
-        sock.send_multipart('HELLO', {'addr' : self.addr, 'idle' : self.idle })
+        sock.send_serialized(['HELLO', {'addr' : self.addr, 'idle' : self.idle }], msg_serialize)
+
+    def map_task(self, task_body):
+        res = [ ]
+        chunk = task_body['chunk']
+        pairs = self.mapper.parse(chunk)
+        for key, value in pairs:
+            res += self.mapper.map(key, value)
+        res = self.mapper.groupby(res)
+        self.map_buffer += res
+        
+    def reduce_task(self):
+        pass
 
     def task(self, task_id, task_class, msg):
         task_class = dill.loads(task_class)
