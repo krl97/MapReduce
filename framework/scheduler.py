@@ -21,7 +21,7 @@ class Scheduler(object):
         self.tasks_state = { t.id: PENDING  for t in list(self.tasks.keys()) }
         self.tasks_pending = [t.id for t in list(self.tasks.keys())]
 
-        self.ikeys = [ ]
+        self.ikeys = set()
 
     def register_worker(self, worker, idle):
         """ Register a new worker in the scheduler to receive task,
@@ -69,7 +69,7 @@ class Scheduler(object):
 
     def map_task(self, msg):
         #receive the intermediate keys
-        self.ikeys += msg['ikeys']
+        self.ikeys.update(msg['ikeys'])
 
     def reduce_task(self, msg):
         pass

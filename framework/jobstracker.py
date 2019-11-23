@@ -75,29 +75,7 @@ class MasterNode(object):
         print('------------------ END ------------------')
         
         for worker in self.workers:
-            self.send_task(worker, {'task': 'shutdown', 'class' : None })
-
-    def shuffle(self):
-        for map_file in self.map_routes:
-            f = open(map_file)
-            keys = f.readlines()
-            inters = [tuple(line.split('-')) for line in keys]
-            for k, v in inters:
-                try:
-                    self.ikeys[k].append(v)
-                except:
-                    self.ikeys[k] = [ v ]
-        print('Shuffle Success')
-
-    def partitioning(self):
-        inter = list(self.ikeys.keys())
-        part = [ { } for _ in range(self.R) ]
-
-        for hash, key in enumerate(inter):
-            part[hash % self.R][key] = self.ikeys[key]
-
-        self.partitions = part
-        print('Partition Success')
+            self.send_task(worker, {'task': 'shutdown', 'class' : None }) 
 
     def msg_thread(self):
         while True: #listen messages forever
@@ -105,14 +83,18 @@ class MasterNode(object):
             
             if command == 'HELLO':
                 worker = Worker(msg['idle'], msg['addr'])
+                self.semaphore.acquire()
                 self.scheduler.register_worker(worker, msg['idle'])
+                self.semaphore.release()
                 self.send_code(worker)
 
             elif command == 'DONE':
                 task = msg['task']
                 resp = msg['response']
+                self.semaphore.acquire()
                 self.scheduler.submit_task(task, resp)
-            
+                self.semaphore.release()
+
             else:
                 # report error
                 print(command)
@@ -124,6 +106,7 @@ class MasterNode(object):
         sock.close()
 
     def send_task(self, worker, task):
-        socket_worker = self.zmq_context.socket(zmq.PUSH)
-        socket_worker.connect(zmq_addr(worker.addr))
-        socket_worker.send_serialized(['TASK', {'task': task])
+        sock = self.zmq_context.socket(zmq.PUSH)
+        sock.connect(zmq_addr(worker.addr))
+        sock.send_serialized(['TASK', {'task': task }])
+        sock.close()
