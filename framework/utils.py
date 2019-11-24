@@ -13,6 +13,7 @@ def zmq_addr(port, transport=None, host=None):
 def chunks(file, size):
     f = open(file, 'r')
     lines = f.readlines()
+    f.close()
     chs = list(chunked(lines, size))
     return len(chs), enumerate(chs)
 
