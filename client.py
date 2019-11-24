@@ -2,6 +2,7 @@ import sys
 from framework import WorkerNode 
 
 if __name__ == "__main__":
-    idle = sys.argv[1]
-    worker = WorkerNode(idle)
+    addr = sys.argv[1]
+    idle = sys.argv[2]
+    worker = WorkerNode(addr, int(idle))
     worker()

@@ -11,7 +11,7 @@ class WorkerNode(object):
     def __init__(self, addr, idle):
         self.addr = addr
         
-        assert idle > 0 'The worker idle must be positive'      
+        assert idle > 0, 'The worker idle must be positive'      
         self.idle = idle
 
         # predefined master directions
@@ -22,30 +22,34 @@ class WorkerNode(object):
 
         self.mapper = None
         self.reducer = None
+        self.registered = False
 
         self.map_buffer = [ ]
 
         self.socket = self.zmq_context.socket(zmq.PULL)
-        self.socket.bind(self.addr)
+        self.socket.bind(zmq_addr(self.addr))
 
     def __call__(self):
         while True:
-            self.say_hello()
+            if not self.registered:
+                self.say_hello()
+
             command, msg = self.socket.recv_serialized(msg_deserialize)
             
             if command == 'CODE':
-                self.mapper = dill.loads(msg['mapper'])
-                self.reducer = dill.loads(msg['reducer'])
+                print('Receiving CODE from master')
+                self.mapper = msg['mapper']
+                self.reducer = msg['reducer']
+                self.registered = True
 
             elif command == 'SHUTDOWN':
                 break
 
             elif command == 'TASK':
                 task = msg['task']
-                func = f'{task.type}_task'
-                res = self.__dict__[func][task.body]
-                self.send_accomplish(task_id, { 'ikeys': res })
-
+                func = f'{task.Type}_task'
+                res = WorkerNode.__dict__[func](self, task.Body)
+                self.send_accomplish(task.Id, { 'ikeys': res })
             else:
                 pass
 
@@ -58,7 +62,7 @@ class WorkerNode(object):
     def send_accomplish(self, task, response):
         sock = self.zmq_context.socket(zmq.PUSH)
         sock.connect(self.master_msg)
-        sock.send_serialized(['DONE', {'task': task, 'response': response}])
+        sock.send_serialized(['DONE', {'task': task, 'response': response}], msg_serialize)
         sock.close()
 
     def map_task(self, task_body):

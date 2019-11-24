@@ -7,14 +7,14 @@ import time
 import zmq
 
 class MasterNode(object):
-    def __init__(self, workers, config):
+    def __init__(self, config):
         self.addr_pong = zmq_addr(8080)
         self.addr_msg = zmq_addr(8081)
         
         self.zmq_context = zmq.Context() 
 
         self.socket_pong = self.zmq_context.socket(zmq.PULL)
-        self.socket_pong.bind(self.addr_task)
+        self.socket_pong.bind(self.addr_pong)
         self.socket_msg = self.zmq_context.socket(zmq.PULL)
         self.socket_msg.bind(self.addr_msg)
 
@@ -33,49 +33,27 @@ class MasterNode(object):
         print('------------------- MAPPING --------------------')
 
         # send all map task
-        while M:
-            if self.map_task():
-                M -= 1
-
-        print('<-- ALL MAP TASKS SENDED -->')
-        print(self.workers)
-        
-        # wait for map workers
         while True:
             self.semaphore.acquire()
-            if all([state == 'completed' for state in self.chunks_state]):
+
+            #first check if all tasks are done
+            if self.scheduler.tasks_done:
+                print('DONE')
                 self.semaphore.release()
                 break
-            self.semaphore.release()            
 
-        print('-------------------- REDUCE TASKS -------------------')
+            next_task = self.scheduler.next_task()
+            
+            if next_task:
+                print(next_task)
+                worker, task = next_task
+                self.send_task(worker, task)
 
-        # reduceTrue
-        self.shuffle()
-        self.partitioning()
-
-        R = self.R
-
-        while R:
-            if self.reduce_task():
-                R -= 1
-
-        while True:
-            self.semaphore.acquire()
-            if all([state == 'completed' for state in self.partition_state]):
-                self.semaphore.release()
-                break
             self.semaphore.release()
 
-        # write to output folder
+        print(self.scheduler.ikeys)
 
-        f = open(f'{self.config.output_folder}/output', 'w')
-        f.write('\n'.join([f'{res[0]}-{res[1]}' for res in self.results]))
-
-        print('------------------ END ------------------')
-        
-        for worker in self.workers:
-            self.send_task(worker, {'task': 'shutdown', 'class' : None }) 
+        print('<-- ALL MAP TASKS SENDED -->')            
 
     def msg_thread(self):
         while True: #listen messages forever
@@ -108,5 +86,5 @@ class MasterNode(object):
     def send_task(self, worker, task):
         sock = self.zmq_context.socket(zmq.PUSH)
         sock.connect(zmq_addr(worker.addr))
-        sock.send_serialized(['TASK', {'task': task }])
+        sock.send_serialized(['TASK', {'task': task }], msg_serialize)
         sock.close()

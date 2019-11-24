@@ -18,17 +18,12 @@ class WC_Reducer(Reducer):
         return res
 
 if __name__ == "__main__":
-    workers = ['8082',
-               '8083',
-               '8084',
-               '8085']
-
     wc_m = WC_Mapper()
     wc_r = WC_Reducer()
 
     config = MapReduce('./input', wc_m, wc_r, './test/')
 
-    master = MasterNode(workers, config)
+    master = MasterNode(config)
 
     #actually you must run clients first :(
     master()

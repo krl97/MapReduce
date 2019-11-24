@@ -13,8 +13,8 @@ def zmq_addr(port, transport=None, host=None):
 def chunks(file, size):
     f = open(file, 'r')
     lines = f.readlines()
-    chs = chunked(lines, size)
-    return enumerate(chs)
+    chs = list(chunked(lines, size))
+    return len(chs), enumerate(chs)
 
 def msg_serialize(objects: list):
     return [dill.dumps(obj) for obj in objects]
