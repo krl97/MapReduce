@@ -32,28 +32,34 @@ class MasterNode(object):
 
         print('------------------- MAPPING --------------------')
 
+        states = [self.scheduler.init_shuffle, self.scheduler.init_reduce]
+
         # send all map task
         while True:
             self.semaphore.acquire()
 
             #first check if all tasks are done
             if self.scheduler.tasks_done:
-                print('DONE')
-                self.semaphore.release()
-                break
+                if not states:
+                    break
 
+                next_op = states.pop(0)
+                next_op()
+
+                self.semaphore.release()
+                continue
+                
             next_task = self.scheduler.next_task()
             
             if next_task:
-                print(next_task)
+                print(next_task.Type)
                 worker, task = next_task
                 self.send_task(worker, task)
 
-            self.semaphore.release()
+            self.semaphore.release()            
 
-        print(self.scheduler.ikeys)
-
-        print('<-- ALL MAP TASKS SENDED -->')            
+        print('--- DONE --- ')
+        
 
     def msg_thread(self):
         while True: #listen messages forever
