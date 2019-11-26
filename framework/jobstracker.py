@@ -21,7 +21,7 @@ class MasterNode(object):
         self.config = config
         self.semaphore = Semaphore()
 
-        self.scheduler = Scheduler(config.input, config.chunk_size)
+        self.scheduler = Scheduler(config.input, config.chunk_size, config.output_folder)
         
         self.results = [ ]
 
@@ -30,7 +30,9 @@ class MasterNode(object):
         msg_thr = Thread(target=self.msg_thread, name="msg_thread")
         msg_thr.start() 
 
-        print('------------------- MAPPING --------------------')
+        print('-- STARTING --')
+
+        states = [self.scheduler.init_shuffle, self.scheduler.init_reduce]
 
         # send all map task
         while True:
@@ -38,22 +40,36 @@ class MasterNode(object):
 
             #first check if all tasks are done
             if self.scheduler.tasks_done:
-                print('DONE')
-                self.semaphore.release()
-                break
+                if not states:
+                    break
 
+                next_op = states.pop(0)
+                next_op()
+
+                self.semaphore.release()
+                continue
+                
             next_task = self.scheduler.next_task()
             
             if next_task:
-                print(next_task)
                 worker, task = next_task
                 self.send_task(worker, task)
 
-            self.semaphore.release()
+            self.semaphore.release()            
 
-        print(self.scheduler.ikeys)
+        print('--- DONE: Show folder test --- ')
 
-        print('<-- ALL MAP TASKS SENDED -->')            
+        self.shutdown_cluster()
+        
+    def shutdown_cluster(self):
+        sock = self.zmq_context.socket(zmq.PUSH)
+        sock.connect(self.addr_msg)
+        sock.send_serialized(['kill', None], msg_serialize)
+
+        for w in self.scheduler.workers.keys():
+            sock = self.zmq_context.socket(zmq.PUSH)
+            sock.connect(zmq_addr(w.Addr))
+            sock.send_serialized(['SHUTDOWN', None], msg_serialize)
 
     def msg_thread(self):
         while True: #listen messages forever
@@ -72,6 +88,9 @@ class MasterNode(object):
                 self.semaphore.acquire()
                 self.scheduler.submit_task(task, resp)
                 self.semaphore.release()
+
+            elif command == 'kill':
+                break
 
             else:
                 # report error

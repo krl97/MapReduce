@@ -1,5 +1,5 @@
 from uuid import uuid1
-from .utils import chunks
+from .utils import chunks, hashing
 
 #Task State
 
@@ -8,20 +8,20 @@ INPROGRESS = 1
 COMPLETED = 2
 
 class Scheduler(object):
-    def __init__(self, input_file, size):
+    def __init__(self, input_file, size, output_folder):
         M, chs = chunks(input_file, size)
         
         #coordinate m map task and r reduce task
-        self.M = M
-        self.R = 4 # predefined
-
+        self.M = M 
+        
         self.workers = { } # Worker -> Task(str)
-
+           
         self.tasks = { str(i): JTask(str(i), 'map', {'chunk': chunk, 'chunk_idx': i }) for i, chunk in chs } 
         self.tasks_state = { t: PENDING  for t in list(self.tasks.keys()) }
         self.tasks_pending = [t for t in list(self.tasks.keys())]
 
-        self.ikeys = set()
+        self.output_folder = output_folder
+        self.mappers = set()
 
     def register_worker(self, worker, idle):
         """ Register a new worker in the scheduler to receive task,
@@ -81,11 +81,32 @@ class Scheduler(object):
             pass
 
     def map_task(self, msg):
-        #receive the intermediate keys
-        self.ikeys.update(msg['ikeys'])
+        self.mappers.add(msg['raddr'])
+
+    def shuffle_task(self, msg):
+        pass
 
     def reduce_task(self, msg):
         pass
+
+    def init_shuffle(self):
+        l = list(self.mappers)
+        l.sort()
+        r = len(l)
+        f_hash = lambda ikey: hashing(ikey) % r
+        for _ in range(r):
+            id = uuid1()
+            self.tasks[id] = JTask(id, 'shuffle', {'mappers': l, 'hash': f_hash})
+            self.tasks_state[id] = PENDING
+            self.tasks_pending.append(id)
+
+    def init_reduce(self):
+        r = len(self.mappers)
+        for _ in range(r):
+            id = uuid1()
+            self.tasks[id] = JTask(id, 'reduce', { 'output_folder': self.output_folder })
+            self.tasks_state[id] = PENDING
+            self.tasks_pending.append(id)
 
     def remove_worker(self, idle):
         task = self.workers.pop(idle)

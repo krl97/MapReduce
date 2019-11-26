@@ -1,15 +1,16 @@
 testfolder:
-	mkdir test test/map_results
+	mkdir test/
 
 clean:
-	rm test/map_results/* test/output
+	rm test/*
 
 run:
+	echo -----------------------------------------------
 	echo Sending Clients to Background
-	python client.py "8082" &
-	python client.py "8083" &
-	python client.py "8084" &
-	python client.py "8085" &
+	python client.py "8082" 1 &
+	python client.py "8084" 2 &
+	python client.py "8086" 3 &
+	python client.py "8088" 4 &
 
 	echo Running Server in Foreground
 	python server.py
