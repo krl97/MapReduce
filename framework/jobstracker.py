@@ -52,14 +52,24 @@ class MasterNode(object):
             next_task = self.scheduler.next_task()
             
             if next_task:
-                print(next_task[1].Type)
                 worker, task = next_task
                 self.send_task(worker, task)
 
             self.semaphore.release()            
 
-        print('--- DONE --- ')
+        print('--- DONE: Show folder test --- ')
+
+        self.shutdown_cluster()
         
+    def shutdown_cluster(self):
+        sock = self.zmq_context.socket(zmq.PUSH)
+        sock.connect(self.addr_msg)
+        sock.send_serialized(['kill', None], msg_serialize)
+
+        for w in self.scheduler.workers.keys():
+            sock = self.zmq_context.socket(zmq.PUSH)
+            sock.connect(zmq_addr(w.Addr))
+            sock.send_serialized(['SHUTDOWN', None], msg_serialize)
 
     def msg_thread(self):
         while True: #listen messages forever
@@ -78,6 +88,9 @@ class MasterNode(object):
                 self.semaphore.acquire()
                 self.scheduler.submit_task(task, resp)
                 self.semaphore.release()
+
+            elif command == 'kill':
+                break
 
             else:
                 # report error

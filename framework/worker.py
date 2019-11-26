@@ -48,7 +48,7 @@ class WorkerNode(object):
             command, msg = self.socket.recv_serialized(msg_deserialize)
             
             if command == 'CODE':
-                print('Receiving CODE from master')
+                print(f'Worker: {self.addr}-{self.raddr} -> Receiving CODE from master')
                 self.semaphore.acquire()
                 self.mapper = msg['mapper']
                 self.reducer = msg['reducer']
@@ -56,6 +56,9 @@ class WorkerNode(object):
                 self.semaphore.release()
 
             elif command == 'SHUTDOWN':
+                sock = self.zmq_context.socket(zmq.PUSH)
+                sock.connect(zmq_addr(self.raddr))
+                sock.send_serialized(['kill', None], msg_serialize)
                 break
 
             elif command == 'TASK':
@@ -99,7 +102,6 @@ class WorkerNode(object):
         mappers = task_body['mappers']
         print(mappers)
         f_hash = task_body['hash']
-        s = set()
         while self.map_buffer:
             ikey, value = self.map_buffer.pop()
             idx = f_hash(ikey)
@@ -114,8 +116,7 @@ class WorkerNode(object):
                 self.semaphore.release()
             else:
                 self.send_ikey(ikey, value, addr)
-        print(s)
-        print('DONE-SHUFFLE')
+        print(f'Worker: {self.addr}-{self.raddr} -> DONE-SHUFFLE')
         return { 'addr': self.addr }
 
     def reduce_task(self, task_body):
