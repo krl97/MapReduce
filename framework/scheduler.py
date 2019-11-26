@@ -1,5 +1,5 @@
 from uuid import uuid1
-from .utils import chunks
+from .utils import chunks, hashing
 
 #Task State
 
@@ -8,7 +8,7 @@ INPROGRESS = 1
 COMPLETED = 2
 
 class Scheduler(object):
-    def __init__(self, input_file, size):
+    def __init__(self, input_file, size, output_folder):
         M, chs = chunks(input_file, size)
         
         #coordinate m map task and r reduce task
@@ -20,6 +20,7 @@ class Scheduler(object):
         self.tasks_state = { t: PENDING  for t in list(self.tasks.keys()) }
         self.tasks_pending = [t for t in list(self.tasks.keys())]
 
+        self.output_folder = output_folder
         self.mappers = set()
 
     def register_worker(self, worker, idle):
@@ -80,7 +81,7 @@ class Scheduler(object):
             pass
 
     def map_task(self, msg):
-        self.mappers.update(msg['addr'])
+        self.mappers.add(msg['raddr'])
 
     def shuffle_task(self, msg):
         pass
@@ -89,19 +90,21 @@ class Scheduler(object):
         pass
 
     def init_shuffle(self):
-        r = len(self.mappers)
-        f_hash = lambda ikey: ikey.__hash__() % r
+        l = list(self.mappers)
+        l.sort()
+        r = len(l)
+        f_hash = lambda ikey: hashing(ikey) % r
         for _ in range(r):
             id = uuid1()
-            self.tasks[id] = JTask(id, 'shuffle', {'mappers': self.mappers, 'hash': f_hash})
+            self.tasks[id] = JTask(id, 'shuffle', {'mappers': l, 'hash': f_hash})
             self.tasks_state[id] = PENDING
             self.tasks_pending.append(id)
 
-    def init_reduce(self, output_folder):
+    def init_reduce(self):
         r = len(self.mappers)
         for _ in range(r):
             id = uuid1()
-            self.tasks[id] = JTask(id, 'reduce', { 'output_folder': output_folder })
+            self.tasks[id] = JTask(id, 'reduce', { 'output_folder': self.output_folder })
             self.tasks_state[id] = PENDING
             self.tasks_pending.append(id)
 

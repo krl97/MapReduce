@@ -21,7 +21,7 @@ class MasterNode(object):
         self.config = config
         self.semaphore = Semaphore()
 
-        self.scheduler = Scheduler(config.input, config.chunk_size)
+        self.scheduler = Scheduler(config.input, config.chunk_size, config.output_folder)
         
         self.results = [ ]
 
@@ -30,7 +30,7 @@ class MasterNode(object):
         msg_thr = Thread(target=self.msg_thread, name="msg_thread")
         msg_thr.start() 
 
-        print('------------------- MAPPING --------------------')
+        print('-- STARTING --')
 
         states = [self.scheduler.init_shuffle, self.scheduler.init_reduce]
 
@@ -52,7 +52,7 @@ class MasterNode(object):
             next_task = self.scheduler.next_task()
             
             if next_task:
-                print(next_task.Type)
+                print(next_task[1].Type)
                 worker, task = next_task
                 self.send_task(worker, task)
 

@@ -10,6 +10,9 @@ def zmq_addr(port, transport=None, host=None):
 
     return f'{transport}://{host}:{port}'
 
+def hashing(obj):
+    return 2 * len(obj) + obj.__sizeof__()
+
 def chunks(file, size):
     f = open(file, 'r')
     lines = f.readlines()

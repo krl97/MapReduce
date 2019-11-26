@@ -34,8 +34,8 @@ class WorkerNode(object):
         self.socket = self.zmq_context.socket(zmq.PULL)
         self.socket.bind(zmq_addr(self.addr))
         self.sock_recv = self.zmq_context.socket(zmq.PULL)
-        raddr = str(int(self.addr) + 1) # TODO: IP tests 
-        self.sock_recv.bind(zmq_addr(raddr))
+        self.raddr = str(int(self.addr) + 1) # TODO: IP tests 
+        self.sock_recv.bind(zmq_addr(self.raddr))
 
     def __call__(self):
         thr = Thread(target=self.thr_receive, name='thr_receive')
@@ -49,9 +49,11 @@ class WorkerNode(object):
             
             if command == 'CODE':
                 print('Receiving CODE from master')
+                self.semaphore.acquire()
                 self.mapper = msg['mapper']
                 self.reducer = msg['reducer']
                 self.registered = True
+                self.semaphore.release()
 
             elif command == 'SHUTDOWN':
                 break
@@ -77,9 +79,10 @@ class WorkerNode(object):
         sock.close()
 
     def send_ikey(self, ikey, value, addr):
-        sock = self.zmq_context.socket(zmq.PUSH)
+        temp_context = zmq.Context()
+        sock = temp_context.socket(zmq.PUSH)
         sock.connect(zmq_addr(addr))
-        sock.send_serialized(['IKEY', {'ikey': ikey, 'value': value }])
+        sock.send_serialized(['IKEY', {'ikey': ikey, 'value': value }], msg_serialize)
         sock.close()
 
     def map_task(self, task_body):
@@ -90,16 +93,29 @@ class WorkerNode(object):
             res += self.mapper.map(key, value)
         res = self.mapper.groupby(res)
         self.map_buffer += res
-        return { 'addr': self.addr }
+        return { 'addr': self.addr, 'raddr': self.raddr }
 
     def shuffle_task(self, task_body):
         mappers = task_body['mappers']
+        print(mappers)
         f_hash = task_body['hash']
+        s = set()
         while self.map_buffer:
             ikey, value = self.map_buffer.pop()
             idx = f_hash(ikey)
             addr = mappers[idx]
-            self.send_ikey(ikey, value, addr)
+            s.add((ikey, idx))
+            if addr == self.raddr:
+                self.semaphore.acquire()
+                try:   
+                    self.reduce_buffer[ikey].append(value)
+                except:
+                    self.reduce_buffer[ikey] = [ value ]
+                self.semaphore.release()
+            else:
+                self.send_ikey(ikey, value, addr)
+        print(s)
+        print('DONE-SHUFFLE')
         return { 'addr': self.addr }
 
     def reduce_task(self, task_body):
@@ -123,10 +139,12 @@ class WorkerNode(object):
             elif command == 'IKEY':
                 key = msg['ikey']
                 value = msg['value']
+                self.semaphore.acquire()
                 try:   
                     self.reduce_buffer[key].append(value)
                 except:
                     self.reduce_buffer[key] = [ value ]
+                self.semaphore.release()
 
             else:
                 print(command)
