@@ -106,7 +106,6 @@ class WorkerNode(object):
             ikey, value = self.map_buffer.pop()
             idx = f_hash(ikey)
             addr = mappers[idx]
-            s.add((ikey, idx))
             if addr == self.raddr:
                 self.semaphore.acquire()
                 try:   
