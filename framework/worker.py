@@ -26,21 +26,12 @@ class WorkerNode(object):
         self.reducer = None
         self.registered = False
 
-        self.map_buffer = [ ]
-        self.reduce_buffer = { }
-
         self.semaphore = Semaphore()
 
         self.socket = self.zmq_context.socket(zmq.PULL)
         self.socket.bind(zmq_addr(self.addr))
-        self.sock_recv = self.zmq_context.socket(zmq.PULL)
-        self.raddr = str(int(self.addr) + 1) # TODO: IP tests 
-        self.sock_recv.bind(zmq_addr(self.raddr))
 
     def __call__(self):
-        thr = Thread(target=self.thr_receive, name='thr_receive')
-        thr.start()
-
         while True:
             if not self.registered:
                 self.say_hello()
@@ -49,7 +40,7 @@ class WorkerNode(object):
             print(command, msg)
 
             if command == 'CODE':
-                print(f'Worker: {self.addr}-{self.raddr} -> Receiving CODE from master')
+                print(f'Worker: {self.addr} -> Receiving CODE from master')
                 self.semaphore.acquire()
                 self.mapper = msg['mapper']
                 self.reducer = msg['reducer']
@@ -57,16 +48,9 @@ class WorkerNode(object):
                 self.semaphore.release()
 
             elif command == 'SHUTDOWN':
-                if self.mapper == None:
-                    break
-                sock = self.zmq_context.socket(zmq.PUSH)
-                sock.connect(zmq_addr(self.raddr))
-                sock.send_serialized(['kill', None], msg_serialize)
                 break
 
             elif command == 'TASK':
-                if self.mapper == None:
-                    break
                 task = msg['task']
                 func = f'{task.Type}_task'
                 res = WorkerNode.__dict__[func](self, task.Body)
@@ -86,13 +70,6 @@ class WorkerNode(object):
         sock.send_serialized(['DONE', {'task': task, 'response': response}], msg_serialize)
         sock.close()
 
-    def send_ikey(self, ikey, value, addr):
-        temp_context = zmq.Context()
-        sock = temp_context.socket(zmq.PUSH)
-        sock.connect(zmq_addr(addr))
-        sock.send_serialized(['IKEY', {'ikey': ikey, 'value': value }], msg_serialize)
-        sock.close()
-
     def map_task(self, task_body):
         res = [ ]
         chunk = task_body['chunk']
@@ -100,59 +77,16 @@ class WorkerNode(object):
         for key, value in pairs:
             res += self.mapper.map(key, value)
         res = self.mapper.groupby(res)
-        self.map_buffer += res
-        return { 'addr': self.addr, 'raddr': self.raddr }
-
-    def shuffle_task(self, task_body):
-        mappers = task_body['mappers']
-        print(mappers)
-        f_hash = task_body['hash']
-        while self.map_buffer:
-            ikey, value = self.map_buffer.pop()
-            idx = f_hash(ikey)
-            addr = mappers[idx]
-            if addr == self.raddr:
-                self.semaphore.acquire()
-                try:   
-                    self.reduce_buffer[ikey].append(value)
-                except:
-                    self.reduce_buffer[ikey] = [ value ]
-                self.semaphore.release()
-            else:
-                self.send_ikey(ikey, value, addr)
-        print(f'Worker: {self.addr}-{self.raddr} -> DONE-SHUFFLE')
-        return { 'addr': self.addr }
+        return { 'ikeys': res, 'addr': self.addr }
 
     def reduce_task(self, task_body):
+        partition = task_body['partition']
         res = [ ]
-        for ikey, values in self.reduce_buffer.items():
+        for ikey, values in partition:
             res.append((ikey, self.reducer.reduce(ikey, values)))
         output_folder = task_body['output_folder']
         assert isdir(output_folder), 'The directory don\'t exist'
         name = f'{relpath(output_folder)}/{self.addr}'
         f = open(name, 'w')
         f.writelines('\n'.join(f'{ikey}-{val}' for ikey, val in res))
-        # clean buffers
-        self.map_buffer = [ ]
-        self.reduce_buffer = { }
         return { 'addr': self.addr }
-
-    def thr_receive(self):
-        while True:
-            command, msg = self.sock_recv.recv_serialized(msg_deserialize)
-
-            if command == 'kill':
-                break
-
-            elif command == 'IKEY':
-                key = msg['ikey']
-                value = msg['value']
-                self.semaphore.acquire()
-                try:   
-                    self.reduce_buffer[key].append(value)
-                except:
-                    self.reduce_buffer[key] = [ value ]
-                self.semaphore.release()
-
-            else:
-                print(command)

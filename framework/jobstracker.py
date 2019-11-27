@@ -42,7 +42,7 @@ class MasterNode(object):
 
             print('-- STARTING --')
 
-            states = [self.scheduler.init_map, self.scheduler.init_shuffle, self.scheduler.init_reduce]
+            states = [self.scheduler.init_map, self.scheduler.init_reduce]
 
             # send all map task
             while True:
@@ -69,9 +69,9 @@ class MasterNode(object):
 
                 self.semaphore.release()            
 
-            print('--- DONE: Show folder test --- ')
+            print('--- DONE: show folder test --- ')
 
-            self.scheduler._reset_task() 
+            self.scheduler._reset_tasks() 
 
         self.shutdown_cluster()
         

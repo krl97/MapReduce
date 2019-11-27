@@ -18,6 +18,7 @@ class Scheduler(object):
         self.workers = { } # Worker -> Task(str)
         self.tasks = { }
         self.tasks_state = { }
+        self.ikeys = { }
         self.tasks_pending = [ ]
 
         self.mappers = set()
@@ -27,10 +28,11 @@ class Scheduler(object):
         self.size = size
         self.output_folder = output_folder
 
-    def _reset_task(self):
+    def _reset_tasks(self):
         self.tasks = { }
         self.tasks_state = { }
         self.tasks_pending = [ ]
+        self.ikeys = { }
         self.mappers = set()
 
     def register_worker(self, worker, idle):
@@ -94,14 +96,18 @@ class Scheduler(object):
             self.tasks_state[task_id] = COMPLETED
             self._free_worker(task_id)
         except:
+            print('Something going wrong...')
             pass
 
     def map_task(self, msg):
-        self.mappers.add(msg['raddr'])
-
-    def shuffle_task(self, msg):
-        pass
-
+        self.mappers.add(msg['addr'])
+        res = msg['ikeys']
+        for ikey, value in res:
+            try:
+                self.ikeys[ikey].append(value)
+            except:
+                self.ikeys[ikey] = [ value ]
+        
     def reduce_task(self, msg):
         pass
 
@@ -114,22 +120,16 @@ class Scheduler(object):
             self.tasks_state[id] = PENDING
             self.tasks_pending.append(id)
 
-    def init_shuffle(self):
-        l = list(self.mappers)
-        l.sort()
-        r = len(l)
-        f_hash = lambda ikey: str_hash(ikey) % r
-        for _ in range(r):
-            id = uuid1()
-            self.tasks[id] = JTask(id, 'shuffle', {'mappers': l, 'hash': f_hash})
-            self.tasks_state[id] = PENDING
-            self.tasks_pending.append(id)
-
     def init_reduce(self):
         r = len(self.mappers)
-        for _ in range(r):
+        partitions = [ [ ] for _ in range(r) ]  
+
+        for ikey in list(self.ikeys.keys()):
+            partitions[str_hash(ikey) % r].append((ikey, self.ikeys[ikey]))
+
+        for i in range(r):
             id = uuid1()
-            self.tasks[id] = JTask(id, 'reduce', { 'output_folder': self.output_folder })
+            self.tasks[id] = JTask(id, 'reduce', { 'partition': partitions[i], 'output_folder': self.output_folder })
             self.tasks_state[id] = PENDING
             self.tasks_pending.append(id)
 
