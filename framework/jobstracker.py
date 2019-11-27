@@ -7,9 +7,10 @@ import time
 import zmq
 
 class MasterNode(object):
-    def __init__(self, config):
-        self.addr_pong = zmq_addr(8080)
+    def __init__(self):
+        self.addr_pong = zmq_addr(8080) # in desused
         self.addr_msg = zmq_addr(8081)
+        self.addr_submit = zmq_addr(5000)
         
         self.zmq_context = zmq.Context() 
 
@@ -17,11 +18,13 @@ class MasterNode(object):
         self.socket_pong.bind(self.addr_pong)
         self.socket_msg = self.zmq_context.socket(zmq.PULL)
         self.socket_msg.bind(self.addr_msg)
+        self.socket_submit = self.zmq_context.socket(zmq.PULL)
+        self.socket_submit.bind(self.addr_submit)
 
-        self.config = config
+        self.config = None # at moment a only config class... must be more with jobs
         self.semaphore = Semaphore()
 
-        self.scheduler = Scheduler(config.input, config.chunk_size, config.output_folder)
+        self.scheduler = Scheduler()
         
         self.results = [ ]
 
@@ -30,34 +33,45 @@ class MasterNode(object):
         msg_thr = Thread(target=self.msg_thread, name="msg_thread")
         msg_thr.start() 
 
-        print('-- STARTING --')
-
-        states = [self.scheduler.init_shuffle, self.scheduler.init_reduce]
-
-        # send all map task
         while True:
-            self.semaphore.acquire()
+            #TODO: Make a better comunication channel with clients
+            config = self.socket_submit.recv_serialized(msg_deserialize)
+            config = config[0]
+            self.scheduler.submit_job(config.input, config.chunk_size, config.output_folder)
+            self.config = config
 
-            #first check if all tasks are done
-            if self.scheduler.tasks_done:
-                if not states:
-                    break
+            print('-- STARTING --')
 
-                next_op = states.pop(0)
-                next_op()
+            states = [self.scheduler.init_map, self.scheduler.init_shuffle, self.scheduler.init_reduce]
 
-                self.semaphore.release()
-                continue
-                
-            next_task = self.scheduler.next_task()
-            
-            if next_task:
-                worker, task = next_task
-                self.send_task(worker, task)
+            # send all map task
+            while True:
+                self.semaphore.acquire()
 
-            self.semaphore.release()            
+                #first check if all tasks are done
+                if self.scheduler.tasks_done:
+                    if not states:
+                        self.semaphore.release()
+                        break
+                    
+                    # pass to next state using the init_<state> function
+                    next_op = states.pop(0)
+                    next_op()
 
-        print('--- DONE: Show folder test --- ')
+                    self.semaphore.release()
+                    continue
+
+                next_task = self.scheduler.next_task()
+
+                if next_task:
+                    worker, task = next_task
+                    self.send_task(worker, task)
+
+                self.semaphore.release()            
+
+            print('--- DONE: Show folder test --- ')
+
+            self.scheduler._reset_task() 
 
         self.shutdown_cluster()
         
@@ -76,11 +90,12 @@ class MasterNode(object):
             command, msg = self.socket_msg.recv_serialized(msg_deserialize)
             
             if command == 'HELLO':
+                #TODO: Make another register method for workers
                 worker = Worker(msg['idle'], msg['addr'])
+                self.send_code(worker)
                 self.semaphore.acquire()
                 self.scheduler.register_worker(worker, msg['idle'])
                 self.semaphore.release()
-                self.send_code(worker)
 
             elif command == 'DONE':
                 task = msg['task']
@@ -98,12 +113,13 @@ class MasterNode(object):
 
     def send_code(self, new_worker):
         sock = self.zmq_context.socket(zmq.PUSH)
-        sock.connect(zmq_addr(new_worker.addr))
+        sock.connect(zmq_addr(new_worker.Addr))
         sock.send_serialized(['CODE', { 'mapper' : self.config.mapper, 'reducer' : self.config.reducer }], msg_serialize)
+        print(f'SENDEND to {new_worker.Addr}')
         sock.close()
 
     def send_task(self, worker, task):
         sock = self.zmq_context.socket(zmq.PUSH)
-        sock.connect(zmq_addr(worker.addr))
+        sock.connect(zmq_addr(worker.Addr))
         sock.send_serialized(['TASK', {'task': task }], msg_serialize)
         sock.close()

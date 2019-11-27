@@ -46,7 +46,8 @@ class WorkerNode(object):
                 self.say_hello()
 
             command, msg = self.socket.recv_serialized(msg_deserialize)
-            
+            print(command, msg)
+
             if command == 'CODE':
                 print(f'Worker: {self.addr}-{self.raddr} -> Receiving CODE from master')
                 self.semaphore.acquire()
@@ -56,12 +57,16 @@ class WorkerNode(object):
                 self.semaphore.release()
 
             elif command == 'SHUTDOWN':
+                if self.mapper == None:
+                    break
                 sock = self.zmq_context.socket(zmq.PUSH)
                 sock.connect(zmq_addr(self.raddr))
                 sock.send_serialized(['kill', None], msg_serialize)
                 break
 
             elif command == 'TASK':
+                if self.mapper == None:
+                    break
                 task = msg['task']
                 func = f'{task.Type}_task'
                 res = WorkerNode.__dict__[func](self, task.Body)
@@ -127,6 +132,9 @@ class WorkerNode(object):
         name = f'{relpath(output_folder)}/{self.addr}'
         f = open(name, 'w')
         f.writelines('\n'.join(f'{ikey}-{val}' for ikey, val in res))
+        # clean buffers
+        self.map_buffer = [ ]
+        self.reduce_buffer = { }
         return { 'addr': self.addr }
 
     def thr_receive(self):

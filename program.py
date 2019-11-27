@@ -1,7 +1,5 @@
-from framework import MasterNode
 from mapreduce.config import MapReduce, Mapper, Reducer
-import dill
-import os
+from mapreduce import mapreduce
 
 class WC_Mapper(Mapper):
     def map(self, key, value):
@@ -23,9 +21,4 @@ if __name__ == "__main__":
 
     config = MapReduce('./input', wc_m, wc_r, './test/')
 
-    master = MasterNode(config)
-
-    #actually you must run clients first :(
-    master()
-
-    print('Server get control again')
+    mapreduce(config)

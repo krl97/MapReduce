@@ -1,5 +1,5 @@
 from uuid import uuid1
-from .utils import chunks, hashing
+from .utils import chunks, str_hash
 
 #Task State
 
@@ -7,20 +7,30 @@ PENDING = 0
 INPROGRESS = 1
 COMPLETED = 2
 
+# TODO: Use the scheduler for track > 1 jobs and workers with code
 class Scheduler(object):
-    def __init__(self, input_file, size, output_folder):
-        M, chs = chunks(input_file, size)
-        
-        #coordinate m map task and r reduce task
-        self.M = M 
-        
-        self.workers = { } # Worker -> Task(str)
-           
-        self.tasks = { str(i): JTask(str(i), 'map', {'chunk': chunk, 'chunk_idx': i }) for i, chunk in chs } 
-        self.tasks_state = { t: PENDING  for t in list(self.tasks.keys()) }
-        self.tasks_pending = [t for t in list(self.tasks.keys())]
+    def __init__(self):
+        # use this values in the scheduler states and for multiple jobs
+        self.input_file = None
+        self.size = None
+        self.output_folder = None
 
+        self.workers = { } # Worker -> Task(str)
+        self.tasks = { }
+        self.tasks_state = { }
+        self.tasks_pending = [ ]
+
+        self.mappers = set()
+
+    def submit_job(self, input_file, size, output_folder):
+        self.input_file = input_file
+        self.size = size
         self.output_folder = output_folder
+
+    def _reset_task(self):
+        self.tasks = { }
+        self.tasks_state = { }
+        self.tasks_pending = [ ]
         self.mappers = set()
 
     def register_worker(self, worker, idle):
@@ -32,6 +42,12 @@ class Scheduler(object):
         else:
             self.workers.setdefault(worker, None)
     
+    def remove_worker(self, idle):
+        task = self.workers.pop(idle)
+        if task:
+            self.tasks_state[task] = PENDING
+            self.pendings.append(task)
+
     def is_registered(self, worker):
         """ Returns True if the worker is registered """
         return not self.workers.keys().isdisjoint([ worker ])
@@ -89,11 +105,20 @@ class Scheduler(object):
     def reduce_task(self, msg):
         pass
 
+    def init_map(self):
+        M, chs = chunks(self.input_file, self.size)
+        
+        for i, chunk in chs:
+            id = str(i)
+            self.tasks[id] = JTask(str(id), 'map', {'chunk': chunk, 'chunk_idx': i }) 
+            self.tasks_state[id] = PENDING
+            self.tasks_pending.append(id)
+
     def init_shuffle(self):
         l = list(self.mappers)
         l.sort()
         r = len(l)
-        f_hash = lambda ikey: hashing(ikey) % r
+        f_hash = lambda ikey: str_hash(ikey) % r
         for _ in range(r):
             id = uuid1()
             self.tasks[id] = JTask(id, 'shuffle', {'mappers': l, 'hash': f_hash})
@@ -107,12 +132,6 @@ class Scheduler(object):
             self.tasks[id] = JTask(id, 'reduce', { 'output_folder': self.output_folder })
             self.tasks_state[id] = PENDING
             self.tasks_pending.append(id)
-
-    def remove_worker(self, idle):
-        task = self.workers.pop(idle)
-        if task:
-            self.tasks_state[task] = PENDING
-            self.pendings.append(task)
 
 class JTask(object):
     """ Represents a Job Task created for the Scheduler """

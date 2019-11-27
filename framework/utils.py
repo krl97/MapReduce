@@ -1,4 +1,5 @@
 from more_itertools import chunked
+from hashlib import sha256
 import dill
 
 def zmq_addr(port, transport=None, host=None):
@@ -10,8 +11,10 @@ def zmq_addr(port, transport=None, host=None):
 
     return f'{transport}://{host}:{port}'
 
-def hashing(obj):
-    return 2 * len(obj) + obj.__sizeof__()
+def str_hash(s: str) -> int:
+    h = sha256(s.encode())
+    hexag = h.hexdigest()
+    return int(hexag, base = 16)
 
 def chunks(file, size):
     f = open(file, 'r')
