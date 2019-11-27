@@ -46,9 +46,17 @@ class Scheduler(object):
     
     def remove_worker(self, idle):
         task = self.workers.pop(idle)
+        print(self.workers)
+        print(task, idle)
         if task:
             self.tasks_state[task] = PENDING
-            self.pendings.append(task)
+            self.tasks_pending.append(task)
+
+    def update_workers(self, alive_workers):
+        for worker in list(self.workers.keys()):
+            if not worker.Addr in alive_workers:
+                print('going to remove')
+                self.remove_worker(worker.Idle) 
 
     def is_registered(self, worker):
         """ Returns True if the worker is registered """
@@ -128,7 +136,7 @@ class Scheduler(object):
             partitions[str_hash(ikey) % r].append((ikey, self.ikeys[ikey]))
 
         for i in range(r):
-            id = uuid1()
+            id = uuid1().hex
             self.tasks[id] = JTask(id, 'reduce', { 'partition': partitions[i], 'output_folder': self.output_folder })
             self.tasks_state[id] = PENDING
             self.tasks_pending.append(id)
@@ -166,6 +174,7 @@ class Worker(object):
 
     def __init__(self, idle, addr):
         self.addr = addr
+        self.pong_addr = str(int(self.addr) + 1)
         self.idle = idle
 
     @property

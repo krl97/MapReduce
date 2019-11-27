@@ -30,8 +30,10 @@ class MasterNode(object):
 
     def __call__(self):
         # here start thread for incoming message from workers
-        msg_thr = Thread(target=self.msg_thread, name="msg_thread")
-        msg_thr.start() 
+        msg_thread = Thread(target=self.msg_thread, name="msg_thread")
+        ping_thread = Thread(target=self.ping_thread, name="ping_thread")
+        msg_thread.start()
+        ping_thread.start()
 
         while True:
             #TODO: Make a better comunication channel with clients
@@ -84,6 +86,49 @@ class MasterNode(object):
             sock = self.zmq_context.socket(zmq.PUSH)
             sock.connect(zmq_addr(w.Addr))
             sock.send_serialized(['SHUTDOWN', None], msg_serialize)
+
+    def ping_thread(self):
+        while True:
+            self.semaphore.acquire()
+            addrs = [zmq_addr(w.pong_addr) for w in list(self.scheduler.workers.keys())]
+            print('addrs', addrs)
+            self.semaphore.release()
+
+            for addr in addrs:
+                print('sending...')
+                ctx = zmq.Context()
+                sock = ctx.socket(zmq.PUSH)
+                sock.connect(addr)
+                sock.send_serialized(['PING', None], msg_serialize)
+                sock.close()
+                print('ended...')
+
+            time.sleep(3) # wait for answers
+
+            alive_workers = []
+            while True:
+                try:
+                    command, msg = self.socket_pong.recv_serialized(msg_deserialize, zmq.NOBLOCK) 
+                    
+                    if command == 'PONG':
+                        alive_workers.append(msg['addr'])
+                    
+                    elif command == 'kill':
+                        return
+
+                    else:
+                        print(command)
+                        pass
+                except:
+                    break
+            
+            print('ALIVE WORKERS:', alive_workers)
+            self.semaphore.acquire()
+            self.scheduler.update_workers(alive_workers)
+            self.semaphore.release()
+
+            time.sleep(3) # wait after next ping operation
+
 
     def msg_thread(self):
         while True: #listen messages forever

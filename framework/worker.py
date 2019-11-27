@@ -6,6 +6,7 @@
 from .utils import zmq_addr, msg_deserialize, msg_serialize
 from threading import Semaphore, Thread
 from os.path import relpath, isdir
+from uuid import uuid1
 import dill
 import zmq
 
@@ -13,8 +14,7 @@ class WorkerNode(object):
     def __init__(self, addr, idle):
         self.addr = addr
         
-        assert idle > 0, 'The worker idle must be positive'      
-        self.idle = idle
+        self.idle = uuid1().hex
 
         # predefined master directions
         self.master_pong = zmq_addr(8080)
@@ -30,8 +30,15 @@ class WorkerNode(object):
 
         self.socket = self.zmq_context.socket(zmq.PULL)
         self.socket.bind(zmq_addr(self.addr))
+        
+        self.paddr = str(int(self.addr) + 1)
+        self.socket_pong = self.zmq_context.socket(zmq.PULL)
+        self.socket_pong.bind(zmq_addr(self.paddr))
 
     def __call__(self):
+        pong_thread = Thread(target=self.pong_thread, name='pong_thread')
+        pong_thread.start()
+
         while True:
             if not self.registered:
                 self.say_hello()
@@ -55,6 +62,21 @@ class WorkerNode(object):
                 func = f'{task.Type}_task'
                 res = WorkerNode.__dict__[func](self, task.Body)
                 self.send_accomplish(task.Id, res)
+
+            else:
+                pass
+
+    def pong_thread(self):
+        while True:
+            command, msg = self.socket_pong.recv_serialized(msg_deserialize)
+
+            if command == 'PING':
+                print('sending pong')
+                self.pong()
+
+            elif command == 'kill':
+                break
+
             else:
                 pass
 
@@ -62,6 +84,13 @@ class WorkerNode(object):
         sock = self.zmq_context.socket(zmq.PUSH)
         sock.connect(self.master_msg)
         sock.send_serialized(['HELLO', {'addr' : self.addr, 'idle' : self.idle }], msg_serialize)
+        sock.close()
+
+    def pong(self):
+        temp_ctx = zmq.Context()
+        sock = temp_ctx.socket(zmq.PUSH)
+        sock.connect(self.master_pong)
+        sock.send_serialized(['PONG', { 'addr': self.addr }], msg_serialize)
         sock.close()
 
     def send_accomplish(self, task, response):
