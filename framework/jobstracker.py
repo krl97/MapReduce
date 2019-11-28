@@ -88,22 +88,23 @@ class MasterNode(object):
             sock.send_serialized(['SHUTDOWN', None], msg_serialize)
 
     def ping_thread(self):
+        c = zmq.Context()
         while True:
             self.semaphore.acquire()
             addrs = [zmq_addr(w.pong_addr) for w in list(self.scheduler.workers.keys())]
-            print('addrs', addrs)
-            self.semaphore.release()
+            print(addrs)
+            #self.semaphore.release()
 
             for addr in addrs:
-                print('sending...')
-                ctx = zmq.Context()
-                sock = ctx.socket(zmq.PUSH)
-                sock.connect(addr)
-                sock.send_serialized(['PING', None], msg_serialize)
-                sock.close()
-                print('ended...')
-
-            time.sleep(3) # wait for answers
+                try:
+                    sock = c.socket(zmq.PUSH)
+                    sock.connect(addr)
+                    sock.send_serialized(['PING', None], msg_serialize, zmq.NOBLOCK)
+                except:
+                    print(zmq_addr(w.pong_addr))
+                    continue
+                
+            time.sleep(1) # wait for answers
 
             alive_workers = []
             while True:
@@ -117,17 +118,17 @@ class MasterNode(object):
                         return
 
                     else:
-                        print(command)
+                        print(msg)
                         pass
                 except:
                     break
             
             print('ALIVE WORKERS:', alive_workers)
-            self.semaphore.acquire()
+            #self.semaphore.acquire()
             self.scheduler.update_workers(alive_workers)
             self.semaphore.release()
 
-            time.sleep(3) # wait after next ping operation
+            time.sleep(1) # wait after next ping operation
 
 
     def msg_thread(self):

@@ -11,7 +11,7 @@ import dill
 import zmq
 
 class WorkerNode(object):
-    def __init__(self, addr, idle):
+    def __init__(self, addr):
         self.addr = addr
         
         self.idle = uuid1().hex
@@ -90,7 +90,7 @@ class WorkerNode(object):
         temp_ctx = zmq.Context()
         sock = temp_ctx.socket(zmq.PUSH)
         sock.connect(self.master_pong)
-        sock.send_serialized(['PONG', { 'addr': self.addr }], msg_serialize)
+        sock.send_serialized(['PONG', {'addr': self.addr}], msg_serialize)
         sock.close()
 
     def send_accomplish(self, task, response):
