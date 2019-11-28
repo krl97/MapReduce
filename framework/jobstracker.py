@@ -91,45 +91,33 @@ class MasterNode(object):
         c = zmq.Context()
         while True:
             self.semaphore.acquire()
-            addrs = [zmq_addr(w.pong_addr) for w in list(self.scheduler.workers.keys())]
-            print(addrs)
-            #self.semaphore.release()
-
-            for addr in addrs:
-                try:
-                    sock = c.socket(zmq.PUSH)
-                    sock.connect(addr)
-                    sock.send_serialized(['PING', None], msg_serialize, zmq.NOBLOCK)
-                except:
-                    print(zmq_addr(w.pong_addr))
-                    continue
-                
-            time.sleep(1) # wait for answers
-
-            alive_workers = []
-            while True:
-                try:
-                    command, msg = self.socket_pong.recv_serialized(msg_deserialize, zmq.NOBLOCK) 
-                    
-                    if command == 'PONG':
-                        alive_workers.append(msg['addr'])
-                    
-                    elif command == 'kill':
-                        return
-
-                    else:
-                        print(msg)
-                        pass
-                except:
-                    break
-            
-            print('ALIVE WORKERS:', alive_workers)
-            #self.semaphore.acquire()
-            self.scheduler.update_workers(alive_workers)
+            workers = [w for w in list(self.scheduler.workers.keys())]
             self.semaphore.release()
 
-            time.sleep(1) # wait after next ping operation
+            print(workers)
+            
+            for worker in workers:
+                sock = c.socket(zmq.PUSH)
+                sock.connect(zmq_addr(worker.pong_addr))
+                sock.send_serialized(['PING', None], msg_serialize, zmq.NOBLOCK)
+                
+                poller = zmq.Poller()
+                poller.register(self.socket_pong, zmq.POLLIN)
+            
+                sck = dict(poller.poll(1000))
+                if sck:
+                    command, msg = self.socket_pong.recv_serialized(msg_deserialize, zmq.NOBLOCK)
+                    print('recv')
+                    if command == 'PONG' and msg['addr'] != worker.Addr:
+                        print(msg['addr'], worker.Addr)
+                    elif command == 'kill':
+                        return
+                else:
+                    self.semaphore.acquire()
+                    self.scheduler.remove_worker(worker.Idle)
+                    self.semaphore.release()
 
+            time.sleep(2)        
 
     def msg_thread(self):
         while True: #listen messages forever

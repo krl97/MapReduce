@@ -50,13 +50,7 @@ class Scheduler(object):
         print(task, idle)
         if task:
             self.tasks_state[task] = PENDING
-            self.tasks_pending.append(task)
-
-    def update_workers(self, alive_workers):
-        for worker in list(self.workers.keys()):
-            if not worker.Addr in alive_workers:
-                print('going to remove')
-                self.remove_worker(worker.Idle) 
+            self.tasks_pending.append(task) 
 
     def is_registered(self, worker):
         """ Returns True if the worker is registered """
