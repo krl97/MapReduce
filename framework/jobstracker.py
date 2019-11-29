@@ -21,7 +21,6 @@ class MasterNode(object):
         self.socket_submit = self.zmq_context.socket(zmq.PULL)
         self.socket_submit.bind(self.addr_submit)
 
-        self.config = None # at moment a only config class... must be more with jobs
         self.semaphore = Semaphore()
 
         self.scheduler = Scheduler()
@@ -33,14 +32,14 @@ class MasterNode(object):
         msg_thread = Thread(target=self.msg_thread, name="msg_thread")
         ping_thread = Thread(target=self.ping_thread, name="ping_thread")
         msg_thread.start()
-        ping_thread.start()
+        ping_thread.start() 
 
         while True:
             #TODO: Make a better comunication channel with clients
-            config = self.socket_submit.recv_serialized(msg_deserialize)
-            config = config[0]
-            self.scheduler.submit_job(config.input, config.chunk_size, config.output_folder)
-            self.config = config
+            if not self.scheduler.with_job:
+                config = self.socket_submit.recv_serialized(msg_deserialize)
+                config = config[0]
+                self.scheduler.submit_job(config)
 
             print('-- STARTING --')
 

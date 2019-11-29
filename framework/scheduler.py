@@ -23,10 +23,13 @@ class Scheduler(object):
 
         self.mappers = set()
 
-    def submit_job(self, input_file, size, output_folder):
-        self.input_file = input_file
-        self.size = size
-        self.output_folder = output_folder
+    def submit_job(self, config):
+        self.input_file = config.input
+        self.size = config.chunk_size
+        self.output_folder = config.output_folder
+
+    def with_job(self):
+        return config != None
 
     def _reset_tasks(self):
         self.tasks = { }

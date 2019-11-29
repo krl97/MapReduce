@@ -116,6 +116,7 @@ class WorkerNode(object):
         output_folder = task_body['output_folder']
         assert isdir(output_folder), 'The directory don\'t exist'
         name = f'{relpath(output_folder)}/{self.addr}'
-        f = open(name, 'w')
+        f = open(name, 'a')
         f.writelines('\n'.join(f'{ikey}-{val}' for ikey, val in res))
+        f.write('\n')
         return { 'addr': self.addr }
