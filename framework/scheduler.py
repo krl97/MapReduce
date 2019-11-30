@@ -1,5 +1,6 @@
 from uuid import uuid1
 from .utils import chunks, str_hash
+from os.path import isdir, relpath
 
 #Task State
 
@@ -11,6 +12,7 @@ COMPLETED = 2
 class Scheduler(object):
     def __init__(self):
         # use this values in the scheduler states and for multiple jobs
+        self.config = None
         self.input_file = None
         self.size = None
         self.output_folder = None
@@ -24,12 +26,14 @@ class Scheduler(object):
         self.mappers = set()
 
     def submit_job(self, config):
+        self.config = config
         self.input_file = config.input
         self.size = config.chunk_size
         self.output_folder = config.output_folder
 
+    @property
     def with_job(self):
-        return config != None
+        return self.config != None
 
     def _reset_tasks(self):
         self.tasks = { }
@@ -92,17 +96,13 @@ class Scheduler(object):
 
     def submit_task(self, task_id, msg):
         """ Submit a message to the scheduler from a socket to be processed """
-        try:
-            state = self.tasks_state[task_id]
-            if state == COMPLETED:
-                return
-            func = f'{self.tasks[task_id].Type}_task'
-            Scheduler.__dict__[func](self, msg)
-            self.tasks_state[task_id] = COMPLETED
-            self._free_worker(task_id)
-        except:
-            print('Something going wrong...')
-            pass
+        state = self.tasks_state[task_id]
+        if state == COMPLETED:
+            return
+        func = f'{self.tasks[task_id].Type}_task'
+        Scheduler.__dict__[func](self, msg)
+        self.tasks_state[task_id] = COMPLETED
+        self._free_worker(task_id)
 
     def map_task(self, msg):
         self.mappers.add(msg['addr'])
@@ -114,7 +114,13 @@ class Scheduler(object):
                 self.ikeys[ikey] = [ value ]
         
     def reduce_task(self, msg):
-        pass
+        addr = msg['addr']
+        res = msg['output']
+        assert isdir(self.output_folder), 'The directory don\'t exist'
+        name = f'{relpath(self.output_folder)}/{addr}'
+        f = open(name, 'a')
+        f.writelines('\n'.join(f'{ikey}-{val}' for ikey, val in res))
+        f.write('\n')
 
     def init_map(self):
         M, chs = chunks(self.input_file, self.size)
@@ -134,7 +140,7 @@ class Scheduler(object):
 
         for i in range(r):
             id = uuid1().hex
-            self.tasks[id] = JTask(id, 'reduce', { 'partition': partitions[i], 'output_folder': self.output_folder })
+            self.tasks[id] = JTask(id, 'reduce', { 'partition': partitions[i] })
             self.tasks_state[id] = PENDING
             self.tasks_pending.append(id)
 
