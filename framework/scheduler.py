@@ -52,9 +52,10 @@ class Scheduler(object):
         """ Returns a function to init the next state, None if the current state
         still in progress, next_state raise a Exception if scheduler workflow ends """
         if self.current_state == FINISH:
+            print('HERE')
             raise Exception('Scheduler in finish state, submit a new job')
         
-        if self.move_next():
+        if self.move_next:
             state_id, state = self.states.pop(0)
             self.current_state = state_id
             return state

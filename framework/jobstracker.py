@@ -17,9 +17,7 @@ class MasterNode(object):
         self.socket_pong.bind(self.addr_pong)
         self.socket_msg = self.zmq_context.socket(zmq.PULL)
         self.socket_msg.bind(self.addr_msg)
-        self.socket_submit = self.zmq_context.socket(zmq.PULL)
-        self.socket_submit.bind(self.addr_submit)
-
+        
         self.semaphore = Semaphore()
         self.backups = [ ]
 
@@ -45,13 +43,14 @@ class MasterNode(object):
 
                 # check for states
                 try:
-                    nxt_state = self.scheduler.next_state() 
+                    nxt_state = self.scheduler.next_state()
                     if nxt_state:   
                         nxt_state()
                     else:
                         next_task = self.scheduler.next_task()
 
                         if next_task:
+                            print(next_task)
                             worker, task = next_task
                             self.send_task(worker, task)
                 except:
@@ -118,7 +117,8 @@ class MasterNode(object):
 
             elif command == 'JOB':
                 self.semaphore.acquire()
-                self.scheduler.submit_job(msg['config'])
+                config = msg['config']
+                self.scheduler.submit_job(config)
                 self.semaphore.release()
 
             elif command == 'DONE':

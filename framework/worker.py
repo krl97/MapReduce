@@ -93,6 +93,7 @@ class WorkerNode(object):
         sock = self.zmq_context.socket(zmq.PUSH)
         sock.connect(self.master_msg)
         sock.send_serialized(['DONE', {'task': task, 'response': response}], msg_serialize)
+        print('DONE')
         sock.close()
 
     def map_task(self, task_body):
