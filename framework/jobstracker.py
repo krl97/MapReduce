@@ -114,7 +114,7 @@ class MasterNode(object):
                     command, msg = self.socket_pong.recv_serialized(msg_deserialize, zmq.NOBLOCK)
                     
                     if command == 'PONG' and msg['addr'] != worker.Addr:
-                        print(msg['addr'], worker.Addr)
+                        print('VIEW:', msg['addr'], worker.Addr)
                     
                     elif command == 'kill':
                         return
@@ -148,7 +148,7 @@ class MasterNode(object):
 
             elif command == 'BACKUP':
                 self.semaphore.acquire()
-                sock = zmq.Context().socket(zmq.PUSH)
+                sock = self.zmq_context.socket(zmq.PUSH)
                 sock.connect(zmq_addr(msg['addr']))
                 sock.send_serialized(['SCHEDULER', { 'scheduler': self.scheduler, 'backups': self.backups }], msg_serialize)
                 sock.close()
@@ -156,7 +156,7 @@ class MasterNode(object):
                 self.semaphore.release()
 
             elif command == 'CHECK':
-                sender = zmq.Context().socket(zmq.PUSH)
+                sender = self.zmq_context.socket(zmq.PUSH)
                 sender.connect(zmq_addr(msg['port']))
                 sender.send_serialized([None], msg_serialize)
 
@@ -182,7 +182,7 @@ class MasterNode(object):
 
     def send_scheduler(self):
         for backup in self.backups:
-            sock = zmq.Context().socket(zmq.PUSH)
+            sock = self.zmq_context.socket(zmq.PUSH)
             sock.connect(zmq_addr(backup))
             sock.send_serialized(['SCHEDULER', { 'scheduler': self.scheduler }], msg_serialize)
             sock.close()
