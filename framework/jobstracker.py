@@ -22,9 +22,9 @@ class MasterNode(object):
         self.socket_submit.bind(self.addr_submit)
 
         self.semaphore = Semaphore()
+        self.backups = [ ]
 
         self.scheduler = Scheduler()
-        self.backups = [ ]
         
         self.results = [ ]
 
@@ -135,6 +135,7 @@ class MasterNode(object):
                 self.send_code(worker)
                 self.semaphore.acquire()
                 self.scheduler.register_worker(worker, msg['idle'])
+                self.send_scheduler()
                 self.semaphore.release()
 
             elif command == 'DONE':
@@ -142,12 +143,16 @@ class MasterNode(object):
                 resp = msg['response']
                 self.semaphore.acquire()
                 self.scheduler.submit_task(task, resp)
+                self.send_scheduler()
                 self.semaphore.release()
 
             elif command == 'BACKUP':
                 self.semaphore.acquire()
+                sock = zmq.Context().socket(zmq.PUSH)
+                sock.connect(zmq_addr(msg['addr']))
+                sock.send_serialized(['SCHEDULER', { 'scheduler': self.scheduler, 'backups': self.backups }], msg_serialize)
+                sock.close()
                 self.backups.append(msg['addr'])
-                self.send_scheduler()
                 self.semaphore.release()
 
             elif command == 'CHECK':

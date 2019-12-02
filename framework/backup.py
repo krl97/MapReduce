@@ -2,6 +2,7 @@ from .utils import zmq_addr, msg_deserialize, msg_serialize
 from framework.jobstracker import MasterNode
 from threading import Thread
 import zmq
+import time
 
 class BackupNode(object):
     def __init__(self, addr):
@@ -13,7 +14,9 @@ class BackupNode(object):
 
         self.zmq_context = zmq.Context()
         self.scheduler_backup = None
-        self.grade = 0
+        self.backups = None
+
+        self.vote = True
 
         self.socket = self.zmq_context.socket(zmq.PULL)
         self.socket.bind(zmq_addr(addr))
@@ -26,15 +29,16 @@ class BackupNode(object):
         thread.start()
 
         while True:
-            s = self.ping_to_master()
-            if not s:
-                break
+            print('START')
+            while self.ping_to_master():
+                pass
+
             # here start leader selection (at moment just start a new master)    
-
-        print('WAKE UP')
-        master = self.init_master()
-        master()
-
+            print('WAKE UP', self.backups)
+            master = self.select_master()
+            print('DECISION')
+            if master:
+                master()
 
     def thread_recv(self):
         while True:
@@ -43,7 +47,10 @@ class BackupNode(object):
             if command == 'SCHEDULER':
                 print('RECV')
                 self.scheduler_backup = msg['scheduler']
-            
+                
+            elif command == 'VOTE':
+                self.vote = False
+
             elif command == 'kill':
                 break
 
@@ -59,6 +66,8 @@ class BackupNode(object):
             if command == 'SCHEDULER':
                 print('First RECV')
                 self.scheduler_backup = msg['scheduler']
+                self.backups = msg['backups']
+                print(self.backups)
                 break
             else:
                 print(command)    
@@ -82,15 +91,24 @@ class BackupNode(object):
         else: 
             return False
 
-    def init_master(self):
-        new_master = MasterNode()
-        new_master.scheduler = self.scheduler_backup
+    def select_master(self):
+        for b in self.backups:
+            sender = self.zmq_context.socket(zmq.PUSH)
+            sender.connect(zmq_addr(b))
+            sender.send_serialized(['VOTE', None], msg_serialize)
 
-        # kill thread 
-        s = zmq.Context().socket(zmq.PUSH)
-        s.connect(zmq_addr(self.addr))
-        s.send_serialized(['kill', None], msg_serialize)
+        time.sleep(2)
 
-        # use broadcast to notify the new ip for master
+        if self.vote:
+            s = self.zmq_context.socket(zmq.PUSH)
+            s.connect(zmq_addr(self.addr))
+            s.send_serialized(['kill', None], msg_serialize)
 
-        return new_master
+            new_master = MasterNode()
+            if self.scheduler_backup:
+                new_master.scheduler = self.scheduler_backup
+                new_master.backups = self.backups
+            return new_master
+        else:
+            #reset votes
+            self.vote = True
