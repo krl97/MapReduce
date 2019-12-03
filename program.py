@@ -1,7 +1,5 @@
-from framework import MasterNode
 from mapreduce.config import MapReduce, Mapper, Reducer
-import dill
-import os
+from mapreduce import mapreduce
 
 class WC_Mapper(Mapper):
     def map(self, key, value):
@@ -18,20 +16,9 @@ class WC_Reducer(Reducer):
         return res
 
 if __name__ == "__main__":
-    workers = ['8082',
-               '8083',
-               '8084',
-               '8085']
-
     wc_m = WC_Mapper()
     wc_r = WC_Reducer()
 
-    mapper = dill.dumps(wc_m)
-    reducer = dill.dumps(wc_r)
+    config = MapReduce('./input', wc_m, wc_r, './test/')
 
-    config = MapReduce('./test/input', mapper, reducer, './test/')
-
-    master = MasterNode(workers, config)
-
-    #actually you must run clients first :(
-    master()
+    mapreduce(config)

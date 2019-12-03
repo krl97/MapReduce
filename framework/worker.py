@@ -3,102 +3,113 @@
     Warning: Ports 8080 and 8081 are reserved for the JobTracker(MasterNode) 
 """
 
-from .utils import zmq_addr
+from .utils import zmq_addr, msg_deserialize, msg_serialize
+from threading import Semaphore, Thread
+from os.path import relpath, isdir
+from uuid import uuid1
 import dill
 import zmq
 
 class WorkerNode(object):
     def __init__(self, addr):
-        self.addr = zmq_addr(addr)
-        self.idle = addr
+        self.addr = addr
+        
+        self.idle = uuid1().hex
 
         # predefined master directions
-        self.master_tsk = zmq_addr(8080)
+        self.master_pong = zmq_addr(8080)
         self.master_msg = zmq_addr(8081)
 
         self.zmq_context = zmq.Context()
 
-        self.status = 'non-task'
+        self.registered = False
+
+        self.semaphore = Semaphore()
 
         self.socket = self.zmq_context.socket(zmq.PULL)
-        self.socket.bind(self.addr)
+        self.socket.bind(zmq_addr(self.addr))
+        
+        self.paddr = str(int(self.addr) + 1)
+        self.socket_pong = self.zmq_context.socket(zmq.PULL)
+        self.socket_pong.bind(zmq_addr(self.paddr))
 
     def __call__(self):
+        pong_thread = Thread(target=self.pong_thread, name='pong_thread')
+        pong_thread.start()
+
         while True:
-            msg = self.socket.recv()
-            msg = dill.loads(msg)
-            task_id = msg['task']
-            task_class = msg['class'] #incoming message contains a str with class code
+            if not self.registered:
+                self.say_hello()
 
-            reply_socket = self.zmq_context.socket(zmq.PUSH)
-            reply_socket.connect(self.master_tsk)
-            if task_id in ['map', 'reduce']:
-                print(f'Starting Task {task_id}...')
-                res = self.task(task_id, task_class, msg)
-                self.send_msg(self.master_msg, res)
-                print('Task Ended... waiting for instructions')
+            command, msg = self.socket.recv_serialized(msg_deserialize)
+            print(command, msg)
+
+            if command == 'REPLY':
+                print(f'Worker: {self.addr} -> Receiving REPLY from master')
+                self.semaphore.acquire()
+                self.registered = True
+                self.semaphore.release()
+
+            elif command == 'SHUTDOWN':
+                break
+
+            elif command == 'TASK':
+                task = msg['task']
+                func = f'{task.Type}_task'
+                res = WorkerNode.__dict__[func](self, task.Body)
+                self.send_accomplish(task.Id, res)
+
             else:
-                print('Unknown task :( \n Response a fail submit')
+                pass
 
-    def send_msg(self, addr, msg):
-        sock_msg = self.zmq_context.socket(zmq.PUSH)
-        sock_msg.connect(self.master_msg)
-        sock_msg.send_json(msg)
+    def pong_thread(self):
+        while True:
+            command, msg = self.socket_pong.recv_serialized(msg_deserialize)
 
-    def task(self, task_id, task_class, msg):
-        task_class = dill.loads(task_class)
+            if command == 'PING':
+                print('sending pong')
+                self.pong()
 
-        if task_id == 'map':
-            # wait from task_class: map, parse and groupBy functions
-            # TODO: Register errors and send a message with work incomplete and errors details to master node
-            lines = self.get_data(msg['file'], msg['chunk'])
-            pairs = task_class.parse(lines)
-            map_res = [] 
-            for key, value in pairs:
-                map_res += task_class.map(key, value)
-            map_res = task_class.groupby(map_res)
+            elif command == 'kill':
+                break
 
-            size = (msg['chunk'][1] - msg['chunk'][0])
-            idx = int(msg['chunk'][0] / size)
-            print(idx)
+            else:
+                pass
 
-            # map_res contains final result... write this in the local disk at moment
-            w = open(f'./test/map_results/map-{self.idle}-{idx}', 'w')
-            w.write('\n'.join([ f'{ikey}-{ival}' for ikey, ival in map_res ]))
+    def say_hello(self):
+        sock = self.zmq_context.socket(zmq.PUSH)
+        sock.connect(self.master_msg)
+        sock.send_serialized(['HELLO', {'addr' : self.addr, 'idle' : self.idle }], msg_serialize)
+        sock.close()
 
-            # build message for master
-            msg = {
-                'status' : 'END',
-                'idle' : self.idle,
-                'task' : 'map-task',
-                'chunk' : idx ,
-                'route' : f'./test/map_results/map-{self.idle}-{idx}'
-            }
+    def pong(self):
+        temp_ctx = zmq.Context()
+        sock = temp_ctx.socket(zmq.PUSH)
+        sock.connect(self.master_pong)
+        sock.send_serialized(['PONG', {'addr': self.addr}], msg_serialize)
+        sock.close()
 
-            return msg
+    def send_accomplish(self, task, response):
+        sock = self.zmq_context.socket(zmq.PUSH)
+        sock.connect(self.master_msg)
+        sock.send_serialized(['DONE', {'task': task, 'response': response}], msg_serialize)
+        print('DONE')
+        sock.close()
 
-        elif task_id == 'reduce':
-            res = []
-            idata = msg['ikeys']
-            for key, it in idata.items():
-                res.append((key, task_class.reduce(key, it)))
-            
-            print(msg['partition'])
+    def map_task(self, task_body):
+        res = [ ]
+        chunk = task_body['chunk']
+        mapper = task_body['mapper']
+        pairs = mapper.parse(chunk)
+        for key, value in pairs:
+            res += mapper.map(key, value)
+        res = mapper.groupby(res)
+        return { 'ikeys': res, 'addr': self.addr }
 
-            msg = {
-                'status' : 'END',
-                'idle' : self.idle,
-                'task' : 'reduce-task',
-                'partition' : msg['partition'],
-                'result' : res
-            }
-
-            return msg
-
-        # check bad use line
-        print('Oops...')
-
-    def get_data(self, file, chunk):
-        f = open(file, 'r')
-        lines = f.readlines()
-        return lines[slice(*chunk)]
+    def reduce_task(self, task_body):
+        partition = task_body['partition']
+        reducer = task_body['reducer']
+        res = [ ]
+        for ikey, values in partition:
+            res.append((ikey, reducer.reduce(ikey, values)))
+        return { 'output': res, 'addr': self.addr }

@@ -1,211 +1,171 @@
-from .utils import zmq_addr
+from .utils import zmq_addr, msg_deserialize, msg_serialize
+from .scheduler import Scheduler, Worker, JTask
 from threading import Thread, Semaphore
 import dill
+import os
+import time
 import zmq
 
 class MasterNode(object):
-    def __init__(self, workers, config):
-        self.addr_task = zmq_addr(8080)
+    def __init__(self):
+        self.addr_pong = zmq_addr(8080) # in desused
         self.addr_msg = zmq_addr(8081)
         
         self.zmq_context = zmq.Context() 
 
-        self.socket_task = self.zmq_context.socket(zmq.PULL)
-        self.socket_task.bind(self.addr_task)
+        self.socket_pong = self.zmq_context.socket(zmq.PULL)
+        self.socket_pong.bind(self.addr_pong)
         self.socket_msg = self.zmq_context.socket(zmq.PULL)
         self.socket_msg.bind(self.addr_msg)
-
-        self.config = config
+        
         self.semaphore = Semaphore()
+        self.backups = [ ]
 
-        self.workers = { worker : 'non-task' for worker in workers }
-        self.map_routes = []
-        self.chunk_size = config.chunk_size # number of lines
-        self.current_chunk = (0, self.chunk_size)
-        self.M = MasterNode.map_splitter(self.config.input, self.chunk_size)
-        self.R = 4 #predefined 4 reduce task
-        self.chunks_state = ['pending'] * self.M
-        self.partition_state = ['pending'] * self.R
-        self.partitions = None
-        self.current_partition = 0
-        self.ikeys = { }
-
+        self.scheduler = Scheduler()
+        
         self.results = [ ]
 
     def __call__(self):
-        #here start thread for incoming message from workers
-        msg_thr = Thread(target=self.msg_thread, name="msg_thread")
-        msg_thr.start() 
+        # here start thread for incoming message from workers
+        msg_thread = Thread(target=self.msg_thread, name="msg_thread")
+        ping_thread = Thread(target=self.ping_thread, name="ping_thread")
+        msg_thread.start()
+        ping_thread.start() 
 
-        M = self.M  #get number of map task to send 
-
-        print('------------------- MAPPING -------------------')
-
-        # send all map task
-        while M:
-            if self.map_task(): 
-                M -= 1
-
-        print('<-- ALL MAP TASKS SENDED --> ')
-        print(self.chunks_state)
-        print(self.workers)
-        print(self.map_routes)
-
-        # wait for map workers
-        while True:
-            if all([state == 'completed' for state in self.chunks_state]):
-                break
-
-        print(self.chunks_state)
-        print(self.workers)
-        print('-------------------- REDUCE TASKS -------------------')
-
-        # reduce
-        self.shuffle()
-        self.partitioning()
-
-        R = self.R
-
-        while R:
-            if self.reduce_task():
-                R -= 1
+        print('INIT')
 
         while True:
-            if all([state == 'completed' for state in self.partition_state]):
-                break
+            print('-- STARTING MASTER --')
 
-        # write to output folder
+            # work loop
+            while True:
+                self.semaphore.acquire()
 
-        f = open(f'{self.config.output_folder}/output', 'w')
-        f.write('\n'.join([f'{res[0]}-{res[1]}' for res in self.results]))
-
-        print('------------------ END ------------------')
-        
-
-    def shuffle(self):
-        for map_file in self.map_routes:
-            f = open(map_file)
-            keys = f.readlines()
-            inters = [tuple(line.split('-')) for line in keys]
-            for k, v in inters:
+                # check for states
                 try:
-                    self.ikeys[k].append(v)
+                    nxt_state = self.scheduler.next_state()
+                    if nxt_state:   
+                        nxt_state()
+                    else:
+                        next_task = self.scheduler.next_task()
+
+                        if next_task:
+                            print(next_task)
+                            worker, task = next_task
+                            self.send_task(worker, task)
                 except:
-                    self.ikeys[k] = [ v ]
-        print('Shuffle Success')
+                    pass
 
-    def partitioning(self):
-        inter = list(self.ikeys.keys())
-        part = [ { } for _ in range(self.R) ]
+                self.semaphore.release()                    
 
-        for hash, key in enumerate(inter):
-            part[hash % self.R][key] = self.ikeys[key]
+        self.shutdown_cluster()
+        
+    def shutdown_cluster(self):
+        sock = self.zmq_context.socket(zmq.PUSH)
+        sock.connect(self.addr_msg)
+        sock.send_serialized(['kill', None], msg_serialize)
 
-        self.partitions = part
-        print('Partition Success')
+        for w in self.scheduler.workers.keys():
+            sock = self.zmq_context.socket(zmq.PUSH)
+            sock.connect(zmq_addr(w.Addr))
+            sock.send_serialized(['SHUTDOWN', None], msg_serialize)
 
-    @staticmethod
-    def map_splitter(file, size):
-        f = open(file, 'r')
-        lines = len(f.readlines())
-        return int(lines / size) + (lines % size > 0)
+    def ping_thread(self):
+        c = zmq.Context()
+        while True:
+            self.semaphore.acquire()
+            workers = [w for w in list(self.scheduler.workers.keys())]
+            self.semaphore.release()
 
-    def get_worker(self):
-        res = None
-        for worker, state in self.workers.items():
-            if state in ['non-task', 'completed']:
-                res = worker
-                break
-        return res
+            print(workers)
+            
+            for worker in workers:
+                sock = c.socket(zmq.PUSH)
+                sock.connect(zmq_addr(worker.pong_addr))
+                sock.send_serialized(['PING', None], msg_serialize, zmq.NOBLOCK)
+                
+                poller = zmq.Poller()
+                poller.register(self.socket_pong, zmq.POLLIN)
+            
+                sck = dict(poller.poll(1000))
+                if sck:
+                    command, msg = self.socket_pong.recv_serialized(msg_deserialize, zmq.NOBLOCK)
+                    
+                    if command == 'PONG' and msg['addr'] != worker.Addr:
+                        print('VIEW:', msg['addr'], worker.Addr)
+                    
+                    elif command == 'kill':
+                        return
+                else:
+                    self.semaphore.acquire()
+                    self.scheduler.remove_worker(worker.Idle)
+                    self.semaphore.release()
+
+            time.sleep(2)        
 
     def msg_thread(self):
         while True: #listen messages forever
-            msg = self.socket_msg.recv_json()
-        
-            #parse message
-            if msg['status'] == 'END':
-                worker = msg['idle']
+            command, msg = self.socket_msg.recv_serialized(msg_deserialize)
+            
+            if command == 'HELLO':
+                worker = Worker(msg['idle'], msg['addr'])
+                self.semaphore.acquire()
+                self.send_reply(worker)
+                self.scheduler.register_worker(worker, msg['idle'])
+                self.send_scheduler()
+                self.semaphore.release()
+
+            elif command == 'JOB':
+                self.semaphore.acquire()
+                config = msg['config']
+                self.scheduler.submit_job(config)
+                self.semaphore.release()
+
+            elif command == 'DONE':
                 task = msg['task']
+                resp = msg['response']
+                self.semaphore.acquire()
+                self.scheduler.submit_task(task, resp)
+                self.send_scheduler()
+                self.semaphore.release()
 
-                if task == 'map-task':
-                    chunk_idx = msg['chunk']
-                    self.semaphore.acquire()
-                    self.workers[worker] = 'completed'
-                    self.chunks_state[chunk_idx] = 'completed'
-                    self.map_routes.append(msg['route'])
-                    self.semaphore.release()
-                    print(f'Worker: {worker} end map-task')
-                
-                elif task == 'reduce-task':
-                    partition = msg['partition']
-                    self.semaphore.acquire()
-                    self.workers[worker] = 'completed'
-                    self.partition_state[partition] = 'completed'
-                    self.results += msg['result']
-                    self.semaphore.release()
-                    print(f'Worker: {worker} end end-task')
+            elif command == 'BACKUP':
+                self.semaphore.acquire()
+                sock = self.zmq_context.socket(zmq.PUSH)
+                sock.connect(zmq_addr(msg['addr']))
+                sock.send_serialized(['SCHEDULER', { 'scheduler': self.scheduler, 'backups': self.backups }], msg_serialize)
+                sock.close()
+                self.backups.append(msg['addr'])
+                self.semaphore.release()
 
-                else:
-                    #other task
-                    print(f'Worker talking about: {task}')
+            elif command == 'CHECK':
+                sender = self.zmq_context.socket(zmq.PUSH)
+                sender.connect(zmq_addr(msg['port']))
+                sender.send_serialized([None], msg_serialize)
+
+            elif command == 'kill':
+                break
 
             else:
                 # report error
-                print(msg['status'])
+                print(command)
 
-    def send_task(self, worker, data):
-        socket_worker = self.zmq_context.socket(zmq.PUSH)
-        socket_worker.connect(zmq_addr(worker))
-        data = dill.dumps(data)
-        socket_worker.send(data)
+    def send_reply(self, worker):
+        sock = self.zmq_context.socket(zmq.PUSH)
+        sock.connect(zmq_addr(worker.Addr))
+        sock.send_serialized(['REPLY', None], msg_serialize)
+        print(f'REPLY to {worker.Addr}')
+        sock.close()
 
-    def map_task(self):
-        """  Assign a map task """
-        worker = self.get_worker()
+    def send_task(self, worker, task):
+        sock = self.zmq_context.socket(zmq.PUSH)
+        sock.connect(zmq_addr(worker.Addr))
+        sock.send_serialized(['TASK', {'task': task }], msg_serialize)
+        sock.close()
 
-        if worker:
-            # build the data
-            data = {'task' : 'map',
-                    'class' : self.config.mapper, #serialized with dill ( this maybe come with a parsing function and local group function)
-                    'file' : self.config.input,
-                    'chunk' : self.current_chunk 
-                }
-
-            self.send_task(worker, data)
-
-            print(f'SENDED to: {worker}')
-            self.semaphore.acquire()
-            self.chunks_state[int(self.current_chunk[0] / self.chunk_size)] = 'in-progress' #set sended chunk
-            self.current_chunk = (self.current_chunk[1], self.current_chunk[1] + self.chunk_size)
-            self.workers[worker] = 'map-task'
-            print(self.workers)
-            print(self.chunks_state)
-            self.semaphore.release()
-            return True
-
-        return False
-
-    def reduce_task(self):
-        """ Assign a reduce task """
-        worker = self.get_worker()
-
-        if worker:
-            # build message
-            data = {
-                'task': 'reduce',
-                'class': self.config.reducer,
-                'partition': self.current_partition,
-                'ikeys': self.partitions[self.current_partition]
-            }
-
-            self.send_task(worker, data)
-            self.semaphore.acquire()
-            self.partition_state[self.current_partition] = 'in-progress'
-            self.current_partition += 1
-            self.workers[worker] = 'reduce-task'
-            print(self.workers)
-            print(self.partition_state)
-            self.semaphore.release()
-            return True
-
-        return False
+    def send_scheduler(self):
+        for backup in self.backups:
+            sock = self.zmq_context.socket(zmq.PUSH)
+            sock.connect(zmq_addr(backup))
+            sock.send_serialized(['SCHEDULER', { 'scheduler': self.scheduler }], msg_serialize)
+            sock.close()
