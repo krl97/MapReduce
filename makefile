@@ -4,7 +4,7 @@ testfolder:
 clean:
 	rm test/*
 
-run:
+run: testfolder
 	echo Running Server in Foreground
 	python master.py
 

@@ -8,6 +8,11 @@ PENDING = 0
 INPROGRESS = 1
 COMPLETED = 2
 
+START = 'start'
+MAP = 'map'
+REDUCE = 'reduce'
+FINISH = 'finish'
+
 # TODO: Use the scheduler for track > 1 jobs and workers with code
 class Scheduler(object):
     def __init__(self):
@@ -18,29 +23,55 @@ class Scheduler(object):
         self.output_folder = None
 
         self.workers = { } # Worker -> Task(str)
+        
         self.tasks = { }
         self.tasks_state = { }
-        self.ikeys = { }
         self.tasks_pending = [ ]
+        
+        self.ikeys = { }
+        
+        self.states = None
+        self.current_state = None
 
         self.mappers = set()
 
     def submit_job(self, config):
+        self._reset()
+
         self.config = config
         self.input_file = config.input
         self.size = config.chunk_size
         self.output_folder = config.output_folder
 
+        #here set scheduler states for this job
+        self.states = [(MAP, self.init_map), 
+                       (REDUCE, self.init_reduce)]
+        self.current_state = START
+
+    def next_state(self):
+        """ Returns a function to init the next state, None if the current state
+        still in progress, next_state raise Exception if scheduler workflow ends """
+        if self.current_state == FINISH:
+            print('HERE')
+            raise Exception('Scheduler in finish state, submit a new job')
+        
+        if self.move_next:
+            state_id, state = self.states.pop(0)
+            self.current_state = state_id
+            return state
+
+    @property
+    def move_next(self):
+        """ Returns True if the current state are finished and the function
+        next_state return the next state in the execution """
+        if self.current_state == START:
+            return self.with_job
+
+        return all([ not status for _, status in self.workers.items()]) and not len(self.tasks_pending)
+
     @property
     def with_job(self):
         return self.config != None
-
-    def _reset_tasks(self):
-        self.tasks = { }
-        self.tasks_state = { }
-        self.tasks_pending = [ ]
-        self.ikeys = { }
-        self.mappers = set()
 
     def register_worker(self, worker, idle):
         """ Register a new worker in the scheduler to receive task,
@@ -77,13 +108,6 @@ class Scheduler(object):
             except:
                 return None
 
-    @property
-    def tasks_done(self):
-        """ Returns True if all workers are without map tasks and 
-        any task is pending, if all tasks are done the reduce operation
-        can start in workers nodes """
-        return all([ not status for _, status in self.workers.items()]) and not len(self.tasks_pending)
-
     def _get_worker(self):
         for worker, status in self.workers.items():
             if not status:
@@ -103,7 +127,6 @@ class Scheduler(object):
         Scheduler.__dict__[func](self, msg)
         self.tasks_state[task_id] = COMPLETED
         self._free_worker(task_id)
-
     def map_task(self, msg):
         self.mappers.add(msg['addr'])
         res = msg['ikeys']
@@ -127,7 +150,7 @@ class Scheduler(object):
         
         for i, chunk in chs:
             id = str(i)
-            self.tasks[id] = JTask(str(id), 'map', {'chunk': chunk, 'chunk_idx': i }) 
+            self.tasks[id] = JTask(str(id), 'map', {'mapper': self.config.mapper ,'chunk': chunk, 'chunk_idx': i }) 
             self.tasks_state[id] = PENDING
             self.tasks_pending.append(id)
 
@@ -140,9 +163,22 @@ class Scheduler(object):
 
         for i in range(r):
             id = uuid1().hex
-            self.tasks[id] = JTask(id, 'reduce', { 'partition': partitions[i] })
+            self.tasks[id] = JTask(id, 'reduce', {'reducer' : self.config.reducer , 'partition': partitions[i] })
             self.tasks_state[id] = PENDING
             self.tasks_pending.append(id)
+
+    def _reset(self):
+        self.config = None
+        self.input_file = None
+        self.size = None
+        self.output_folder = None
+        self.tasks = { }
+        self.tasks_state = { }
+        self.tasks_pending = [ ]
+        self.ikeys = { }
+        self.mappers = set()
+        self.states = None
+        self.current_state = None
 
 class JTask(object):
     """ Represents a Job Task created for the Scheduler """

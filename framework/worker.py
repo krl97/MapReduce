@@ -22,8 +22,6 @@ class WorkerNode(object):
 
         self.zmq_context = zmq.Context()
 
-        self.mapper = None
-        self.reducer = None
         self.registered = False
 
         self.semaphore = Semaphore()
@@ -46,11 +44,9 @@ class WorkerNode(object):
             command, msg = self.socket.recv_serialized(msg_deserialize)
             print(command, msg)
 
-            if command == 'CODE':
-                print(f'Worker: {self.addr} -> Receiving CODE from master')
+            if command == 'REPLY':
+                print(f'Worker: {self.addr} -> Receiving REPLY from master')
                 self.semaphore.acquire()
-                self.mapper = msg['mapper']
-                self.reducer = msg['reducer']
                 self.registered = True
                 self.semaphore.release()
 
@@ -97,20 +93,23 @@ class WorkerNode(object):
         sock = self.zmq_context.socket(zmq.PUSH)
         sock.connect(self.master_msg)
         sock.send_serialized(['DONE', {'task': task, 'response': response}], msg_serialize)
+        print('DONE')
         sock.close()
 
     def map_task(self, task_body):
         res = [ ]
         chunk = task_body['chunk']
-        pairs = self.mapper.parse(chunk)
+        mapper = task_body['mapper']
+        pairs = mapper.parse(chunk)
         for key, value in pairs:
-            res += self.mapper.map(key, value)
-        res = self.mapper.groupby(res)
+            res += mapper.map(key, value)
+        res = mapper.groupby(res)
         return { 'ikeys': res, 'addr': self.addr }
 
     def reduce_task(self, task_body):
         partition = task_body['partition']
+        reducer = task_body['reducer']
         res = [ ]
         for ikey, values in partition:
-            res.append((ikey, self.reducer.reduce(ikey, values)))
+            res.append((ikey, reducer.reduce(ikey, values)))
         return { 'output': res, 'addr': self.addr }

@@ -10,7 +10,6 @@ class MasterNode(object):
     def __init__(self):
         self.addr_pong = zmq_addr(8080) # in desused
         self.addr_msg = zmq_addr(8081)
-        self.addr_submit = zmq_addr(5000)
         
         self.zmq_context = zmq.Context() 
 
@@ -18,9 +17,7 @@ class MasterNode(object):
         self.socket_pong.bind(self.addr_pong)
         self.socket_msg = self.zmq_context.socket(zmq.PULL)
         self.socket_msg.bind(self.addr_msg)
-        self.socket_submit = self.zmq_context.socket(zmq.PULL)
-        self.socket_submit.bind(self.addr_submit)
-
+        
         self.semaphore = Semaphore()
         self.backups = [ ]
 
@@ -38,47 +35,28 @@ class MasterNode(object):
         print('INIT')
 
         while True:
-            #TODO: Make a better comunication channel with clients
-            config = self.socket_submit.recv_serialized(msg_deserialize)
-            config = config[0]
-            self.scheduler.submit_job(config)
+            print('-- STARTING MASTER --')
 
-            print('-- STARTING --')
-
-            states = [self.scheduler.init_map, self.scheduler.init_reduce]
-
-            # send all map task
+            # work loop
             while True:
                 self.semaphore.acquire()
 
-                #first check if all tasks are done
-                if self.scheduler.tasks_done:
-                    if not states:
-                        self.semaphore.release()
-                        break
-                    
-                    # pass to next state using the init_<state> function
-                    next_op = states.pop(0)
-                    next_op()
+                # check for states
+                try:
+                    nxt_state = self.scheduler.next_state()
+                    if nxt_state:   
+                        nxt_state()
+                    else:
+                        next_task = self.scheduler.next_task()
 
-                    self.send_scheduler()
+                        if next_task:
+                            print(next_task)
+                            worker, task = next_task
+                            self.send_task(worker, task)
+                except:
+                    pass
 
-                    self.semaphore.release()
-                    continue
-
-                next_task = self.scheduler.next_task()
-
-                if next_task:
-                    worker, task = next_task
-                    self.send_task(worker, task)
-
-                
-
-                self.semaphore.release()
-
-            print('--- DONE: show folder test --- ')
-
-            self.scheduler._reset_tasks() 
+                self.semaphore.release()                    
 
         self.shutdown_cluster()
         
@@ -114,7 +92,7 @@ class MasterNode(object):
                     command, msg = self.socket_pong.recv_serialized(msg_deserialize, zmq.NOBLOCK)
                     
                     if command == 'PONG' and msg['addr'] != worker.Addr:
-                        print(msg['addr'], worker.Addr)
+                        print('VIEW:', msg['addr'], worker.Addr)
                     
                     elif command == 'kill':
                         return
@@ -130,12 +108,17 @@ class MasterNode(object):
             command, msg = self.socket_msg.recv_serialized(msg_deserialize)
             
             if command == 'HELLO':
-                #TODO: Make another register method for workers
                 worker = Worker(msg['idle'], msg['addr'])
-                self.send_code(worker)
                 self.semaphore.acquire()
+                self.send_reply(worker)
                 self.scheduler.register_worker(worker, msg['idle'])
                 self.send_scheduler()
+                self.semaphore.release()
+
+            elif command == 'JOB':
+                self.semaphore.acquire()
+                config = msg['config']
+                self.scheduler.submit_job(config)
                 self.semaphore.release()
 
             elif command == 'DONE':
@@ -148,7 +131,7 @@ class MasterNode(object):
 
             elif command == 'BACKUP':
                 self.semaphore.acquire()
-                sock = zmq.Context().socket(zmq.PUSH)
+                sock = self.zmq_context.socket(zmq.PUSH)
                 sock.connect(zmq_addr(msg['addr']))
                 sock.send_serialized(['SCHEDULER', { 'scheduler': self.scheduler, 'backups': self.backups }], msg_serialize)
                 sock.close()
@@ -156,7 +139,7 @@ class MasterNode(object):
                 self.semaphore.release()
 
             elif command == 'CHECK':
-                sender = zmq.Context().socket(zmq.PUSH)
+                sender = self.zmq_context.socket(zmq.PUSH)
                 sender.connect(zmq_addr(msg['port']))
                 sender.send_serialized([None], msg_serialize)
 
@@ -167,11 +150,11 @@ class MasterNode(object):
                 # report error
                 print(command)
 
-    def send_code(self, new_worker):
+    def send_reply(self, worker):
         sock = self.zmq_context.socket(zmq.PUSH)
-        sock.connect(zmq_addr(new_worker.Addr))
-        sock.send_serialized(['CODE', { 'mapper' : self.scheduler.config.mapper, 'reducer' : self.scheduler.config.reducer }], msg_serialize)
-        print(f'SENDEND to {new_worker.Addr}')
+        sock.connect(zmq_addr(worker.Addr))
+        sock.send_serialized(['REPLY', None], msg_serialize)
+        print(f'REPLY to {worker.Addr}')
         sock.close()
 
     def send_task(self, worker, task):
@@ -182,7 +165,7 @@ class MasterNode(object):
 
     def send_scheduler(self):
         for backup in self.backups:
-            sock = zmq.Context().socket(zmq.PUSH)
+            sock = self.zmq_context.socket(zmq.PUSH)
             sock.connect(zmq_addr(backup))
             sock.send_serialized(['SCHEDULER', { 'scheduler': self.scheduler }], msg_serialize)
             sock.close()
