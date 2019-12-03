@@ -50,7 +50,7 @@ class Scheduler(object):
 
     def next_state(self):
         """ Returns a function to init the next state, None if the current state
-        still in progress, next_state raise a Exception if scheduler workflow ends """
+        still in progress, next_state raise Exception if scheduler workflow ends """
         if self.current_state == FINISH:
             print('HERE')
             raise Exception('Scheduler in finish state, submit a new job')
@@ -127,7 +127,6 @@ class Scheduler(object):
         Scheduler.__dict__[func](self, msg)
         self.tasks_state[task_id] = COMPLETED
         self._free_worker(task_id)
-
     def map_task(self, msg):
         self.mappers.add(msg['addr'])
         res = msg['ikeys']
