@@ -1,5 +1,5 @@
 from .utils import zmq_addr, msg_deserialize, msg_serialize
-from .scheduler import Scheduler, Worker, JTask
+from .scheduler import Scheduler, Worker, JTask, JobsTracker
 from threading import Thread, Semaphore
 import dill
 import os
@@ -21,7 +21,7 @@ class MasterNode(object):
         self.semaphore = Semaphore()
         self.backups = [ ]
 
-        self.scheduler = Scheduler()
+        self.tracker = JobsTracker() 
         
         self.results = [ ]
 
@@ -43,18 +43,20 @@ class MasterNode(object):
 
                 # check for states
                 try:
-                    nxt_state = self.scheduler.next_state()
+                    nxt_state = self.tracker.scheduler.next_state()
                     if nxt_state:   
                         nxt_state()
                     else:
-                        next_task = self.scheduler.next_task()
+                        next_task = self.tracker.scheduler.next_task()
 
                         if next_task:
-                            print(next_task)
                             worker, task = next_task
                             self.send_task(worker, task)
                 except:
                     pass
+
+                if self.tracker.next_job():
+                    print('--- NEXT ---')
 
                 self.semaphore.release()                    
 
@@ -65,7 +67,7 @@ class MasterNode(object):
         sock.connect(self.addr_msg)
         sock.send_serialized(['kill', None], msg_serialize)
 
-        for w in self.scheduler.workers.keys():
+        for w in self.tracker.scheduler.workers.keys():
             sock = self.zmq_context.socket(zmq.PUSH)
             sock.connect(zmq_addr(w.Addr))
             sock.send_serialized(['SHUTDOWN', None], msg_serialize)
@@ -74,7 +76,7 @@ class MasterNode(object):
         c = zmq.Context()
         while True:
             self.semaphore.acquire()
-            workers = [w for w in list(self.scheduler.workers.keys())]
+            workers = [w for w in list(self.tracker.scheduler.workers.keys())]
             self.semaphore.release()
 
             print(workers)
@@ -98,7 +100,7 @@ class MasterNode(object):
                         return
                 else:
                     self.semaphore.acquire()
-                    self.scheduler.remove_worker(worker.Idle)
+                    self.tracker.scheduler.remove_worker(worker.Idle)
                     self.semaphore.release()
 
             time.sleep(2)        
@@ -111,21 +113,21 @@ class MasterNode(object):
                 worker = Worker(msg['idle'], msg['addr'])
                 self.semaphore.acquire()
                 self.send_reply(worker)
-                self.scheduler.register_worker(worker, msg['idle'])
+                self.tracker.scheduler.register_worker(worker, msg['idle'])
                 self.send_scheduler()
                 self.semaphore.release()
 
             elif command == 'JOB':
                 self.semaphore.acquire()
                 config = msg['config']
-                self.scheduler.submit_job(config)
+                self.tracker.submit_job(config)
                 self.semaphore.release()
 
             elif command == 'DONE':
                 task = msg['task']
                 resp = msg['response']
                 self.semaphore.acquire()
-                self.scheduler.submit_task(task, resp)
+                self.tracker.scheduler.submit_task(task, resp)
                 self.send_scheduler()
                 self.semaphore.release()
 
@@ -133,7 +135,7 @@ class MasterNode(object):
                 self.semaphore.acquire()
                 sock = self.zmq_context.socket(zmq.PUSH)
                 sock.connect(zmq_addr(msg['addr']))
-                sock.send_serialized(['SCHEDULER', { 'scheduler': self.scheduler, 'backups': self.backups }], msg_serialize)
+                sock.send_serialized(['SCHEDULER', { 'scheduler': self.tracker, 'backups': self.backups }], msg_serialize)
                 sock.close()
                 self.backups.append(msg['addr'])
                 self.semaphore.release()
@@ -167,5 +169,5 @@ class MasterNode(object):
         for backup in self.backups:
             sock = self.zmq_context.socket(zmq.PUSH)
             sock.connect(zmq_addr(backup))
-            sock.send_serialized(['SCHEDULER', { 'scheduler': self.scheduler }], msg_serialize)
+            sock.send_serialized(['SCHEDULER', { 'scheduler': self.tracker }], msg_serialize)
             sock.close()

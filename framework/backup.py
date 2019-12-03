@@ -1,5 +1,5 @@
 from .utils import zmq_addr, msg_deserialize, msg_serialize
-from framework.jobstracker import MasterNode
+from framework.master import MasterNode
 from threading import Thread
 import zmq
 import time
