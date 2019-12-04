@@ -103,6 +103,34 @@ class MasterNode(object):
                     self.tracker.scheduler.remove_worker(worker.Idle)
                     self.semaphore.release()
 
+            self.semaphore.acquire()
+            backups = list(self.backups)
+            self.semaphore.release()
+
+            for b in backups:
+                sock = c.socket(zmq.PUSH)
+                sock.connect(zmq_addr(b))
+                sock.send_serialized(['PING', None], msg_serialize, zmq.NOBLOCK)
+                
+                poller = zmq.Poller()
+                poller.register(self.socket_pong, zmq.POLLIN)
+            
+                sck = dict(poller.poll(1000))
+                if sck:
+                    command, msg = self.socket_pong.recv_serialized(msg_deserialize, zmq.NOBLOCK)
+                    
+                    if command == 'PONG' and msg['addr'] != b:
+                        print('VIEW:', msg['addr'], b)
+                    
+                    elif command == 'kill':
+                        return
+                else:
+                    self.semaphore.acquire()
+                    self.backups.remove(b)
+                    self.update_backups(b)
+                    self.semaphore.release()
+
+
             time.sleep(2)        
 
     def msg_thread(self):
@@ -136,8 +164,8 @@ class MasterNode(object):
                 sock = self.zmq_context.socket(zmq.PUSH)
                 sock.connect(zmq_addr(msg['addr']))
                 sock.send_serialized(['SCHEDULER', { 'scheduler': self.tracker, 'backups': self.backups }], msg_serialize)
-                sock.close()
                 self.backups.append(msg['addr'])
+                print(self.backups)
                 self.semaphore.release()
 
             elif command == 'CHECK':
@@ -170,4 +198,11 @@ class MasterNode(object):
             sock = self.zmq_context.socket(zmq.PUSH)
             sock.connect(zmq_addr(backup))
             sock.send_serialized(['SCHEDULER', { 'scheduler': self.tracker }], msg_serialize)
+            sock.close()
+
+    def update_backups(self, missing):
+        for b in self.backups:
+            sock = self.zmq_context.socket(zmq.PUSH)
+            sock.connect(zmq_addr(b))
+            sock.send_serialized(['UPDATE', { 'missing' : missing }], msg_serialize)
             sock.close()

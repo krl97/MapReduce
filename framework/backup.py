@@ -1,6 +1,6 @@
 from .utils import zmq_addr, msg_deserialize, msg_serialize
 from framework.master import MasterNode
-from threading import Thread
+from threading import Thread, Semaphore
 import zmq
 import time
 
@@ -17,6 +17,8 @@ class BackupNode(object):
         self.backups = None
 
         self.vote = True
+
+        self.semaphore = Semaphore()
 
         self.socket = self.zmq_context.socket(zmq.PULL)
         self.socket.bind(zmq_addr(addr))
@@ -47,7 +49,25 @@ class BackupNode(object):
             if command == 'SCHEDULER':
                 print('RECV')
                 self.tracker_backup = msg['scheduler']
-                
+            
+            elif command == 'PING':
+                temp_ctx = zmq.Context()
+                sock = temp_ctx.socket(zmq.PUSH)
+                sock.connect(self.master_pong)
+                sock.send_serialized(['PONG', {'addr': self.addr}], msg_serialize)
+                sock.close()
+
+            elif command == 'UPDATE':
+                print('UPDATING')
+                mss = msg['missing']
+                self.semaphore.acquire()
+                try:
+                    self.backups.remove(mss)
+                except:
+                    pass
+                print('After:', self.backups)
+                self.semaphore.release()
+
             elif command == 'VOTE':
                 self.vote = False
 
@@ -65,9 +85,11 @@ class BackupNode(object):
             command, msg = self.socket.recv_serialized(msg_deserialize)
             if command == 'SCHEDULER':
                 print('First RECV')
+                self.semaphore.acquire()
                 self.tracker_backup = msg['scheduler']
                 self.backups = msg['backups']
-                print(self.backups)
+                print(self.backups, msg['backups'])
+                self.semaphore.release()
                 break
             else:
                 print(command)    
