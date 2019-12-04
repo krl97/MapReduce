@@ -1,4 +1,4 @@
-from .utils import zmq_addr, msg_deserialize, msg_serialize
+from .utils import zmq_addr, msg_deserialize, msg_serialize, get_host_ip
 from .scheduler import Scheduler, Worker, JTask, JobsTracker
 from threading import Thread, Semaphore
 import dill
@@ -8,8 +8,11 @@ import zmq
 
 class MasterNode(object):
     def __init__(self):
-        self.addr_pong = zmq_addr(8080) # in desused
-        self.addr_msg = zmq_addr(8081)
+        #get pc ip
+        self.host = get_host_ip()
+
+        self.addr_pong = zmq_addr(8080, host=self.host)
+        self.addr_msg = zmq_addr(8081, host=self.host)
         
         self.zmq_context = zmq.Context() 
 

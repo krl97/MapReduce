@@ -3,7 +3,7 @@
     Warning: Ports 8080 and 8081 are reserved for the JobTracker(MasterNode) 
 """
 
-from .utils import zmq_addr, msg_deserialize, msg_serialize
+from .utils import zmq_addr, msg_deserialize, msg_serialize, get_host_ip
 from threading import Semaphore, Thread
 from os.path import relpath, isdir
 from uuid import uuid1
@@ -11,12 +11,12 @@ import dill
 import zmq
 
 class WorkerNode(object):
-    def __init__(self, addr):
-        self.addr = addr
+    def __init__(self):
+        self.host = get_host_ip()
         
         self.idle = uuid1().hex
 
-        # predefined master directions
+        #master address
         self.master_pong = zmq_addr(8080)
         self.master_msg = zmq_addr(8081)
 
