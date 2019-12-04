@@ -13,7 +13,28 @@ MAP = 'map'
 REDUCE = 'reduce'
 FINISH = 'finish'
 
-# TODO: Use the scheduler for track > 1 jobs and workers with code
+class JobsTracker(object):
+    def __init__(self):
+        self.scheduler = Scheduler()
+        self.pendings_jobs = [ ]
+
+    def submit_job(self, config):
+        if self.scheduler.with_job:
+            self.pendings_jobs.append(config)
+        else:
+            self.scheduler.log_job(config)
+        print(self.pendings_jobs)
+
+    def next_job(self):
+        if not self.scheduler.with_job:
+            try:
+                job = self.pendings_jobs.pop(0)
+                self.scheduler.log_job(job)
+                return True
+            except:
+                pass
+        return False
+
 class Scheduler(object):
     def __init__(self):
         # use this values in the scheduler states and for multiple jobs
@@ -31,13 +52,9 @@ class Scheduler(object):
         self.ikeys = { }
         
         self.states = None
-        self.current_state = None
+        self.current_state = START
 
-        self.mappers = set()
-
-    def submit_job(self, config):
-        self._reset()
-
+    def log_job(self, config):
         self.config = config
         self.input_file = config.input
         self.size = config.chunk_size
@@ -45,8 +62,8 @@ class Scheduler(object):
 
         #here set scheduler states for this job
         self.states = [(MAP, self.init_map), 
-                       (REDUCE, self.init_reduce)]
-        self.current_state = START
+                       (REDUCE, self.init_reduce),
+                       (FINISH, self.init_finish)]
 
     def next_state(self):
         """ Returns a function to init the next state, None if the current state
@@ -127,8 +144,8 @@ class Scheduler(object):
         Scheduler.__dict__[func](self, msg)
         self.tasks_state[task_id] = COMPLETED
         self._free_worker(task_id)
+
     def map_task(self, msg):
-        self.mappers.add(msg['addr'])
         res = msg['ikeys']
         for ikey, value in res:
             try:
@@ -155,7 +172,7 @@ class Scheduler(object):
             self.tasks_pending.append(id)
 
     def init_reduce(self):
-        r = len(self.mappers)
+        r = 4
         partitions = [ [ ] for _ in range(r) ]  
 
         for ikey in list(self.ikeys.keys()):
@@ -166,6 +183,9 @@ class Scheduler(object):
             self.tasks[id] = JTask(id, 'reduce', {'reducer' : self.config.reducer , 'partition': partitions[i] })
             self.tasks_state[id] = PENDING
             self.tasks_pending.append(id)
+
+    def init_finish(self):
+        self._reset()
 
     def _reset(self):
         self.config = None
@@ -178,7 +198,7 @@ class Scheduler(object):
         self.ikeys = { }
         self.mappers = set()
         self.states = None
-        self.current_state = None
+        self.current_state = START
 
 class JTask(object):
     """ Represents a Job Task created for the Scheduler """
@@ -231,3 +251,6 @@ class Worker(object):
 
     def __hash__(self):
         return self.idle.__hash__()
+
+class SchedulerEndException(Exception):
+    pass
