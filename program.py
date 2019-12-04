@@ -1,5 +1,6 @@
 from mapreduce.config import MapReduce, Mapper, Reducer
 from mapreduce import mapreduce
+import sys
 
 class WC_Mapper(Mapper):
     def map(self, key, value):
@@ -16,9 +17,10 @@ class WC_Reducer(Reducer):
         return res
 
 if __name__ == "__main__":
+    out = sys.argv[1]
     wc_m = WC_Mapper()
     wc_r = WC_Reducer()
 
-    config = MapReduce('./input', wc_m, wc_r, './test/')
+    config = MapReduce('./input', wc_m, wc_r, out)
 
     mapreduce(config)
