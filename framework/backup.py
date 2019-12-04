@@ -13,7 +13,7 @@ class BackupNode(object):
         self.master_msg = zmq_addr(8081)
 
         self.zmq_context = zmq.Context()
-        self.scheduler_backup = None
+        self.tracker_backup = None
         self.backups = None
 
         self.vote = True
@@ -46,7 +46,7 @@ class BackupNode(object):
             
             if command == 'SCHEDULER':
                 print('RECV')
-                self.scheduler_backup = msg['scheduler']
+                self.tracker_backup = msg['scheduler']
                 
             elif command == 'VOTE':
                 self.vote = False
@@ -65,7 +65,7 @@ class BackupNode(object):
             command, msg = self.socket.recv_serialized(msg_deserialize)
             if command == 'SCHEDULER':
                 print('First RECV')
-                self.scheduler_backup = msg['scheduler']
+                self.tracker_backup = msg['scheduler']
                 self.backups = msg['backups']
                 print(self.backups)
                 break
@@ -105,8 +105,8 @@ class BackupNode(object):
             s.send_serialized(['kill', None], msg_serialize)
 
             new_master = MasterNode()
-            if self.scheduler_backup:
-                new_master.scheduler = self.scheduler_backup
+            if self.tracker_backup:
+                new_master.tracker = self.tracker_backup
                 new_master.backups = self.backups
             return new_master
         else:
