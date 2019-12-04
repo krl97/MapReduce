@@ -8,11 +8,8 @@ import zmq
 
 class MasterNode(object):
     def __init__(self):
-        #get pc ip
-        self.host = get_host_ip()
-
-        self.addr_pong = zmq_addr(8080, host=self.host)
-        self.addr_msg = zmq_addr(8081, host=self.host)
+        self.addr_pong = zmq_addr(8080)
+        self.addr_msg = zmq_addr(8081)
         
         self.zmq_context = zmq.Context() 
 

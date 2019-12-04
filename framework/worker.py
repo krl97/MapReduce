@@ -11,9 +11,8 @@ import dill
 import zmq
 
 class WorkerNode(object):
-    def __init__(self):
-        self.host = get_host_ip()
-        
+    def __init__(self, addr):
+        self.addr = addr
         self.idle = uuid1().hex
 
         #master address
