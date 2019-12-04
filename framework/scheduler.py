@@ -155,9 +155,10 @@ class Scheduler(object):
         
     def reduce_task(self, msg):
         addr = msg['addr']
+        filename = msg['filename']
         res = msg['output']
         assert isdir(self.output_folder), 'The directory don\'t exist'
-        name = f'{relpath(self.output_folder)}/{addr}'
+        name = f'{relpath(self.output_folder)}/{filename}'
         f = open(name, 'a')
         f.writelines('\n'.join(f'{ikey}-{val}' for ikey, val in res))
         f.write('\n')

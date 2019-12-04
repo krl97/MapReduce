@@ -7,12 +7,13 @@ import time
 import zmq
 
 class MasterNode(object):
+    """ msg -> 8081 | ping -> 8080 """
     def __init__(self):
         #get pc ip
-        self.host = get_host_ip()
+        self.host = get_host_ip(lh=True)
 
-        self.addr_pong = zmq_addr(8080, host=self.host)
         self.addr_msg = zmq_addr(8081, host=self.host)
+        self.addr_pong = zmq_addr(8080, host=self.host)
         
         self.zmq_context = zmq.Context() 
 

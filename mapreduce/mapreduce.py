@@ -7,7 +7,7 @@ def mapreduce(config, wait=False):
 
     c = zmq.Context()
     s_send = c.socket(zmq.PUSH)
-    s_send.connect('tcp://127.0.0.1:8081')
+    s_send.connect('tcp://127.0.1.1:8081')
     s_send.send_serialized(['JOB', { 'config': config }], msg_serialize)
     s_send.close()
 

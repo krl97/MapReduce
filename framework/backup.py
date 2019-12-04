@@ -5,13 +5,14 @@ import zmq
 import time
 
 class BackupNode(object):
+    """ msg -> 8084 """
     def __init__(self):
-        self.host = get_host_ip()
+        self.host = get_host_ip(lh=True)
         self.addr = zmq_addr(8084, host=self.host)
 
         # predefined master directions
-        self.master_pong = zmq_addr(8080)
         self.master_msg = zmq_addr(8081)
+        self.master_pong = zmq_addr(8080)
 
         self.zmq_context = zmq.Context()
         self.tracker_backup = None
@@ -102,7 +103,7 @@ class BackupNode(object):
 
         sender = c.socket(zmq.PUSH)
         sender.connect(self.master_msg)
-        sender.send_serialized(['CHECK', { 'addr': zmq_addr(port, self.host) }], msg_serialize)
+        sender.send_serialized(['CHECK', { 'addr': zmq_addr(port, host=self.host) }], msg_serialize)
         
         poller = zmq.Poller()
         poller.register(s, zmq.POLLIN)

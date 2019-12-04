@@ -7,13 +7,14 @@ from .utils import zmq_addr, msg_deserialize, msg_serialize, get_host_ip
 from threading import Semaphore, Thread
 from os.path import relpath, isdir
 from uuid import uuid1
+import time
 import dill
 import zmq
 
 class WorkerNode(object):
     """ 8082 -> msg | 8083 -> paddr """
     def __init__(self):
-        self.host = get_host_ip()
+        self.host = get_host_ip(lh=True)
         self.addr = zmq_addr(8082, host=self.host)
         self.paddr = zmq_addr(8083, host=self.host)
 
@@ -58,7 +59,7 @@ class WorkerNode(object):
             elif command == 'TASK':
                 task = msg['task']
                 func = f'{task.Type}_task'
-                res = WorkerNode.__dict__[func](self, task.Body)
+                res = WorkerNode.__dict__[func](self, task.Body, task.Id)
                 self.send_accomplish(task.Id, res)
 
             else:
@@ -98,7 +99,7 @@ class WorkerNode(object):
         print('DONE')
         sock.close()
 
-    def map_task(self, task_body):
+    def map_task(self, task_body, task_id):
         res = [ ]
         chunk = task_body['chunk']
         mapper = task_body['mapper']
@@ -108,10 +109,10 @@ class WorkerNode(object):
         res = mapper.groupby(res)
         return { 'ikeys': res, 'addr': self.addr }
 
-    def reduce_task(self, task_body):
+    def reduce_task(self, task_body, task_id):
         partition = task_body['partition']
         reducer = task_body['reducer']
         res = [ ]
         for ikey, values in partition:
             res.append((ikey, reducer.reduce(ikey, values)))
-        return { 'output': res, 'addr': self.addr }
+        return { 'output': res, 'addr': self.addr, 'filename': task_id }
