@@ -10,8 +10,8 @@ class MasterNode(object):
     """ msg -> 8081 | ping -> 8080 """
     def __init__(self):
         #get pc ip
-        self.host = get_host_ip(lh=True)
-
+        self.host = get_host_ip()
+        print(self.host)
         self.addr_msg = zmq_addr(8081, host=self.host)
         self.addr_pong = zmq_addr(8080, host=self.host)
         
@@ -25,11 +25,16 @@ class MasterNode(object):
         self.semaphore = Semaphore()
         self.backups = [ ]
 
+        self.say_hi = False
+
         self.tracker = JobsTracker() 
         
         self.results = [ ]
 
     def __call__(self):
+        if self.say_hi:
+            self.send_identity()
+
         # here start thread for incoming message from workers
         msg_thread = Thread(target=self.msg_thread, name="msg_thread")
         ping_thread = Thread(target=self.ping_thread, name="ping_thread")
@@ -93,7 +98,7 @@ class MasterNode(object):
                 poller = zmq.Poller()
                 poller.register(self.socket_pong, zmq.POLLIN)
             
-                sck = dict(poller.poll(1000))
+                sck = dict(poller.poll(2000))
                 if sck:
                     command, msg = self.socket_pong.recv_serialized(msg_deserialize, zmq.NOBLOCK)
                     
@@ -119,7 +124,7 @@ class MasterNode(object):
                 poller = zmq.Poller()
                 poller.register(self.socket_pong, zmq.POLLIN)
             
-                sck = dict(poller.poll(1000))
+                sck = dict(poller.poll(2000))
                 if sck:
                     command, msg = self.socket_pong.recv_serialized(msg_deserialize, zmq.NOBLOCK)
                     
@@ -153,6 +158,7 @@ class MasterNode(object):
                 self.semaphore.acquire()
                 config = msg['config']
                 self.tracker.submit_job(config)
+                self.send_scheduler()
                 self.semaphore.release()
 
             elif command == 'DONE':
@@ -167,6 +173,7 @@ class MasterNode(object):
                 self.semaphore.acquire()
                 sock = self.zmq_context.socket(zmq.PUSH)
                 sock.connect(msg['addr'])
+                print(msg['addr'])
                 sock.send_serialized(['SCHEDULER', { 'scheduler': self.tracker, 'backups': self.backups }], msg_serialize)
                 self.backups.append(msg['addr'])
                 print(self.backups)
@@ -210,3 +217,11 @@ class MasterNode(object):
             sock.connect(b)
             sock.send_serialized(['UPDATE', { 'missing' : missing }], msg_serialize)
             sock.close()
+
+    def send_identity(self):
+        nodes = [w.Addr for w in list(self.tracker.scheduler.workers.keys())]
+        nodes += self.backups
+        for node in nodes:
+            s = self.zmq_context.socket(zmq.PUSH)
+            s.connect(node)
+            s.send_serialized(['NEW_MASTER', {'host': self.host}], msg_serialize)

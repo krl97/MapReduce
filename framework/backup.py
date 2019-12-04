@@ -7,7 +7,8 @@ import time
 class BackupNode(object):
     """ msg -> 8084 """
     def __init__(self):
-        self.host = get_host_ip(lh=True)
+        self.host = get_host_ip()
+        print(self.host)
         self.addr = zmq_addr(8084, host=self.host)
 
         # predefined master directions
@@ -59,6 +60,11 @@ class BackupNode(object):
                 sock.send_serialized(['PONG', {'addr': self.addr}], msg_serialize)
                 sock.close()
 
+            elif command == 'NEW_MASTER':
+                host = msg['host']
+                self.master_msg = zmq_addr(8081, host=host)
+                self.master_pong = zmq_addr(8080, host=host)
+
             elif command == 'UPDATE':
                 print('UPDATING')
                 mss = msg['missing']
@@ -82,6 +88,7 @@ class BackupNode(object):
         while True:
             s = self.zmq_context.socket(zmq.PUSH)
             s.connect(self.master_msg)
+            print(self.master_msg)
             s.send_serialized(['BACKUP', {'addr': self.addr}], msg_serialize)
 
             command, msg = self.socket.recv_serialized(msg_deserialize)
@@ -97,11 +104,10 @@ class BackupNode(object):
                 print(command)    
 
     def ping_to_master(self):
-        c = zmq.Context()
-        s = c.socket(zmq.PULL)
+        s = self.zmq_context.socket(zmq.PULL)
         port = s.bind_to_random_port(f'tcp://{self.host}') #at moment
 
-        sender = c.socket(zmq.PUSH)
+        sender = self.zmq_context.socket(zmq.PUSH)
         sender.connect(self.master_msg)
         sender.send_serialized(['CHECK', { 'addr': zmq_addr(port, host=self.host) }], msg_serialize)
         

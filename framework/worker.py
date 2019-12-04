@@ -14,7 +14,7 @@ import zmq
 class WorkerNode(object):
     """ 8082 -> msg | 8083 -> paddr """
     def __init__(self):
-        self.host = get_host_ip(lh=True)
+        self.host = get_host_ip()
         self.addr = zmq_addr(8082, host=self.host)
         self.paddr = zmq_addr(8083, host=self.host)
 
@@ -52,6 +52,11 @@ class WorkerNode(object):
                 self.semaphore.acquire()
                 self.registered = True
                 self.semaphore.release()
+
+            elif command == 'NEW_MASTER':
+                host = msg['host']
+                self.master_msg = zmq_addr(8081, host=host)
+                self.master_pong = zmq_addr(8080, host=host)
 
             elif command == 'SHUTDOWN':
                 break
