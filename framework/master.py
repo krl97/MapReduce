@@ -72,7 +72,7 @@ class MasterNode(object):
 
         for w in self.tracker.scheduler.workers.keys():
             sock = self.zmq_context.socket(zmq.PUSH)
-            sock.connect(zmq_addr(w.Addr))
+            sock.connect(w.Addr)
             sock.send_serialized(['SHUTDOWN', None], msg_serialize)
 
     def ping_thread(self):
@@ -86,7 +86,7 @@ class MasterNode(object):
             
             for worker in workers:
                 sock = c.socket(zmq.PUSH)
-                sock.connect(zmq_addr(worker.pong_addr))
+                sock.connect(worker.pong_addr)
                 sock.send_serialized(['PING', None], msg_serialize, zmq.NOBLOCK)
                 
                 poller = zmq.Poller()
@@ -112,7 +112,7 @@ class MasterNode(object):
 
             for b in backups:
                 sock = c.socket(zmq.PUSH)
-                sock.connect(zmq_addr(b))
+                sock.connect(b)
                 sock.send_serialized(['PING', None], msg_serialize, zmq.NOBLOCK)
                 
                 poller = zmq.Poller()
@@ -141,7 +141,7 @@ class MasterNode(object):
             command, msg = self.socket_msg.recv_serialized(msg_deserialize)
             
             if command == 'HELLO':
-                worker = Worker(msg['idle'], msg['addr'])
+                worker = Worker(msg['idle'], msg['addr'], msg['paddr'])
                 self.semaphore.acquire()
                 self.send_reply(worker)
                 self.tracker.scheduler.register_worker(worker, msg['idle'])
@@ -165,7 +165,7 @@ class MasterNode(object):
             elif command == 'BACKUP':
                 self.semaphore.acquire()
                 sock = self.zmq_context.socket(zmq.PUSH)
-                sock.connect(zmq_addr(msg['addr']))
+                sock.connect(msg['addr'])
                 sock.send_serialized(['SCHEDULER', { 'scheduler': self.tracker, 'backups': self.backups }], msg_serialize)
                 self.backups.append(msg['addr'])
                 print(self.backups)
@@ -173,7 +173,7 @@ class MasterNode(object):
 
             elif command == 'CHECK':
                 sender = self.zmq_context.socket(zmq.PUSH)
-                sender.connect(zmq_addr(msg['port']))
+                sender.connect(msg['addr'])
                 sender.send_serialized([None], msg_serialize)
 
             elif command == 'kill':
@@ -185,27 +185,27 @@ class MasterNode(object):
 
     def send_reply(self, worker):
         sock = self.zmq_context.socket(zmq.PUSH)
-        sock.connect(zmq_addr(worker.Addr))
+        sock.connect(worker.Addr)
         sock.send_serialized(['REPLY', None], msg_serialize)
         print(f'REPLY to {worker.Addr}')
         sock.close()
 
     def send_task(self, worker, task):
         sock = self.zmq_context.socket(zmq.PUSH)
-        sock.connect(zmq_addr(worker.Addr))
+        sock.connect(worker.Addr)
         sock.send_serialized(['TASK', {'task': task }], msg_serialize)
         sock.close()
 
     def send_scheduler(self):
         for backup in self.backups:
             sock = self.zmq_context.socket(zmq.PUSH)
-            sock.connect(zmq_addr(backup))
+            sock.connect(backup)
             sock.send_serialized(['SCHEDULER', { 'scheduler': self.tracker }], msg_serialize)
             sock.close()
 
     def update_backups(self, missing):
         for b in self.backups:
             sock = self.zmq_context.socket(zmq.PUSH)
-            sock.connect(zmq_addr(b))
+            sock.connect(b)
             sock.send_serialized(['UPDATE', { 'missing' : missing }], msg_serialize)
             sock.close()

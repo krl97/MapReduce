@@ -11,9 +11,12 @@ import dill
 import zmq
 
 class WorkerNode(object):
+    """ 8082 -> msg | 8083 -> paddr """
     def __init__(self):
         self.host = get_host_ip()
-        
+        self.addr = zmq_addr(8082, host=self.host)
+        self.paddr = zmq_addr(8083, host=self.host)
+
         self.idle = uuid1().hex
 
         #master address
@@ -27,11 +30,10 @@ class WorkerNode(object):
         self.semaphore = Semaphore()
 
         self.socket = self.zmq_context.socket(zmq.PULL)
-        self.socket.bind(zmq_addr(self.addr))
+        self.socket.bind(self.addr)
         
-        self.paddr = str(int(self.addr) + 1)
         self.socket_pong = self.zmq_context.socket(zmq.PULL)
-        self.socket_pong.bind(zmq_addr(self.paddr))
+        self.socket_pong.bind(self.paddr)
 
     def __call__(self):
         pong_thread = Thread(target=self.pong_thread, name='pong_thread')
@@ -79,7 +81,7 @@ class WorkerNode(object):
     def say_hello(self):
         sock = self.zmq_context.socket(zmq.PUSH)
         sock.connect(self.master_msg)
-        sock.send_serialized(['HELLO', {'addr' : self.addr, 'idle' : self.idle }], msg_serialize)
+        sock.send_serialized(['HELLO', {'addr' : self.addr, 'paddr': self.paddr, 'idle' : self.idle }], msg_serialize)
         sock.close()
 
     def pong(self):

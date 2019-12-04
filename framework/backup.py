@@ -1,12 +1,13 @@
-from .utils import zmq_addr, msg_deserialize, msg_serialize
+from .utils import zmq_addr, msg_deserialize, msg_serialize, get_host_ip
 from framework.master import MasterNode
 from threading import Thread, Semaphore
 import zmq
 import time
 
 class BackupNode(object):
-    def __init__(self, addr):
-        self.addr = addr
+    def __init__(self):
+        self.host = get_host_ip()
+        self.addr = zmq_addr(8084, host=self.host)
 
         # predefined master directions
         self.master_pong = zmq_addr(8080)
@@ -21,7 +22,7 @@ class BackupNode(object):
         self.semaphore = Semaphore()
 
         self.socket = self.zmq_context.socket(zmq.PULL)
-        self.socket.bind(zmq_addr(addr))
+        self.socket.bind(self.addr)
 
     def __call__(self):
         print('Starter')
@@ -97,11 +98,11 @@ class BackupNode(object):
     def ping_to_master(self):
         c = zmq.Context()
         s = c.socket(zmq.PULL)
-        port = s.bind_to_random_port('tcp://127.0.0.1') #at moment
+        port = s.bind_to_random_port(f'tcp://{self.host}') #at moment
 
         sender = c.socket(zmq.PUSH)
         sender.connect(self.master_msg)
-        sender.send_serialized(['CHECK', { 'port': port }], msg_serialize)
+        sender.send_serialized(['CHECK', { 'addr': zmq_addr(port, self.host) }], msg_serialize)
         
         poller = zmq.Poller()
         poller.register(s, zmq.POLLIN)
@@ -116,14 +117,14 @@ class BackupNode(object):
     def select_master(self):
         for b in self.backups:
             sender = self.zmq_context.socket(zmq.PUSH)
-            sender.connect(zmq_addr(b))
+            sender.connect(b)
             sender.send_serialized(['VOTE', None], msg_serialize)
 
         time.sleep(2)
 
         if self.vote:
             s = self.zmq_context.socket(zmq.PUSH)
-            s.connect(zmq_addr(self.addr))
+            s.connect(self.addr)
             s.send_serialized(['kill', None], msg_serialize)
 
             new_master = MasterNode()
