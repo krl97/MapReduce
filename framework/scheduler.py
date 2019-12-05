@@ -23,7 +23,7 @@ class JobsTracker(object):
             self.pendings_jobs.append(config)
         else:
             self.scheduler.log_job(config)
-        print(self.pendings_jobs)
+        print('PENDINGS JOBS:', self.pendings_jobs)
 
     def next_job(self):
         if not self.scheduler.with_job:
@@ -100,8 +100,8 @@ class Scheduler(object):
     
     def remove_worker(self, idle):
         task = self.workers.pop(idle)
-        print(self.workers)
-        print(task, idle)
+        print('REMAINS:', self.workers)
+        print('TASK:', task, 'IDLE:', idle)
         if task:
             self.tasks_state[task] = PENDING
             self.tasks_pending.append(task) 

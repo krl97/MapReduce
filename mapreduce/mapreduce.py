@@ -2,16 +2,17 @@ from framework.utils import msg_serialize, msg_deserialize, get_host_ip, do_broa
 import zmq
 
 def mapreduce(config):
+    """ Submit a new job in the jobstracker using a config class """
     # connect to master and submit a config class to
     # log a new job in the scheduler
     host = get_host_ip()
-    print(host)
     #try get master_ip from network
     master_ip = do_broadcast(host, 6666)
-    print(master_ip)
-
+    
     if not master_ip:
         raise Exception('Master not founded in cluster')
+
+    print('SENDING JOB')
 
     c = zmq.Context()
     s_send = c.socket(zmq.PUSH)
