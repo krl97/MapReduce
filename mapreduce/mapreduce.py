@@ -1,14 +1,31 @@
-from framework.utils import msg_serialize
+from framework.utils import msg_serialize, msg_deserialize, get_host_ip, do_broadcast, zmq_addr
 import zmq
 
-def mapreduce(config, wait=False):
+def mapreduce(config):
     # connect to master and submit a config class to
     # log a new job in the scheduler
+    host = get_host_ip()
+    print(host)
+    #try get master_ip from network
+    master_ip = do_broadcast(host, 6666)
+    print(master_ip)
+
+    if not master_ip:
+        raise Exception('Master not founded in cluster')
 
     c = zmq.Context()
     s_send = c.socket(zmq.PUSH)
-    s_send.connect('tcp://192.168.43.182:8081')
-    s_send.send_serialized(['JOB', { 'config': config }], msg_serialize)
-    s_send.close()
+    s_send.connect(zmq_addr(8081, host=master_ip))
 
-    # use wait flag to stop user program execution 
+    # here send the direction to receive the response
+    sock = c.socket(zmq.PULL)
+    port = sock.bind_to_random_port(f'tcp://{host}')
+
+    config.r_addr = zmq_addr(port, host=host)
+    s_send.send_serialized(['JOB', { 'config': config }], msg_serialize)
+    
+    state, msg = sock.recv_serialized(msg_deserialize)
+
+    print('JOB STATE:', state)
+
+    s_send.close() 

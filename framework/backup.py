@@ -1,4 +1,4 @@
-from .utils import zmq_addr, msg_deserialize, msg_serialize, get_host_ip
+from .utils import zmq_addr, msg_deserialize, msg_serialize, get_host_ip, do_broadcast
 from framework.master import MasterNode
 from threading import Thread, Semaphore
 import zmq
@@ -11,9 +11,14 @@ class BackupNode(object):
         print(self.host)
         self.addr = zmq_addr(8084, host=self.host)
 
-        # predefined master directions
-        self.master_msg = zmq_addr(8081)
-        self.master_pong = zmq_addr(8080)
+        #get master address using broadcast
+        master_ip = do_broadcast(self.host, 6666)
+        
+        if not master_ip:
+            raise Exception('Master not found in the network')
+
+        self.master_pong = zmq_addr(8080, host=master_ip)
+        self.master_msg = zmq_addr(8081, host=master_ip)
 
         self.zmq_context = zmq.Context()
         self.tracker_backup = None
