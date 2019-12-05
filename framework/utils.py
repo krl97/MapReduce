@@ -1,5 +1,6 @@
 from more_itertools import chunked
 from hashlib import sha256
+from PyQt5.QtNetwork import QNetworkInterface
 import dill
 
 def zmq_addr(port, transport=None, host=None):
@@ -10,6 +11,11 @@ def zmq_addr(port, transport=None, host=None):
         transport = 'tcp'
 
     return f'{transport}://{host}:{port}'
+
+def get_host_ip():
+    address = QNetworkInterface.allAddresses()
+    ip = address[2].toString()
+    return ip
 
 def str_hash(s: str) -> int:
     h = sha256(s.encode())
