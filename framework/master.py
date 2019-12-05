@@ -31,10 +31,12 @@ class MasterNode(object):
 
     def __call__(self):
         # here start thread for incoming message from workers
-        msg_thread = Thread(target=self.msg_thread, name="msg_thread")
-        ping_thread = Thread(target=self.ping_thread, name="ping_thread")
-        msg_thread.start()
-        ping_thread.start() 
+        _msg_thread = Thread(target=self.msg_thread, name="msg_thread")
+        _ping_thread = Thread(target=self.ping_thread, name="ping_thread")
+        _broadcast_thread = Thread(target=self.broadcast_thread, name="broadcast_thread")
+        _broadcast_thread.start()
+        _msg_thread.start()
+        _ping_thread.start() 
 
         print('INIT')
 
@@ -75,6 +77,10 @@ class MasterNode(object):
             sock = self.zmq_context.socket(zmq.PUSH)
             sock.connect(w.Addr)
             sock.send_serialized(['SHUTDOWN', None], msg_serialize)
+
+
+    def broadcast_thread(self):
+        waiting_to_broadcast(self.host, 6666)
 
     def ping_thread(self):
         c = zmq.Context()
@@ -221,7 +227,4 @@ class MasterNode(object):
             s.connect(node)
             s.send_serialized(['NEW_MASTER', {'host': self.host}], msg_serialize)
 
-        time.sleep(1)
-
-    def broadcast_thread(self):
-        pass 
+        time.sleep(1) 

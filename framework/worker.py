@@ -3,7 +3,7 @@
     Warning: Ports 8080 and 8081 are reserved for the JobTracker(MasterNode) 
 """
 
-from .utils import zmq_addr, msg_deserialize, msg_serialize, get_host_ip
+from .utils import zmq_addr, msg_deserialize, msg_serialize, get_host_ip, do_broadcast
 from threading import Semaphore, Thread
 from os.path import relpath, isdir
 from uuid import uuid1
@@ -20,9 +20,14 @@ class WorkerNode(object):
 
         self.idle = uuid1().hex
 
-        #master address
-        self.master_pong = zmq_addr(8080)
-        self.master_msg = zmq_addr(8081)
+        #get master address using broadcast
+        master_ip = do_broadcast(self.host, 6666)
+
+        if not master_ip:
+            raise Exception('Master not found in the network')
+
+        self.master_pong = zmq_addr(8080, host=master_ip)
+        self.master_msg = zmq_addr(8081, host=master_ip)
 
         self.zmq_context = zmq.Context()
 
