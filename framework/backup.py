@@ -1,16 +1,19 @@
-from .utils import zmq_addr, msg_deserialize, msg_serialize
+from .utils import zmq_addr, msg_deserialize, msg_serialize, get_host_ip
 from framework.master import MasterNode
 from threading import Thread, Semaphore
 import zmq
 import time
 
 class BackupNode(object):
-    def __init__(self, addr):
-        self.addr = addr
+    """ msg -> 8084 """
+    def __init__(self):
+        self.host = get_host_ip()
+        print(self.host)
+        self.addr = zmq_addr(8084, host=self.host)
 
         # predefined master directions
-        self.master_pong = zmq_addr(8080)
         self.master_msg = zmq_addr(8081)
+        self.master_pong = zmq_addr(8080)
 
         self.zmq_context = zmq.Context()
         self.tracker_backup = None
@@ -21,14 +24,15 @@ class BackupNode(object):
         self.semaphore = Semaphore()
 
         self.socket = self.zmq_context.socket(zmq.PULL)
-        self.socket.bind(zmq_addr(addr))
+        self.socket.bind(self.addr)
 
     def __call__(self):
         print('Starter')
-        self.log_in_master()
         
         thread = Thread(target=self.thread_recv, name='recv')
         thread.start()
+
+        self.log_in_master()
 
         while True:
             print('START')
@@ -57,6 +61,14 @@ class BackupNode(object):
                 sock.send_serialized(['PONG', {'addr': self.addr}], msg_serialize)
                 sock.close()
 
+            elif command == 'NEW_MASTER':
+                host = msg['host']
+                print('new_master', host)
+                self.semaphore.acquire()
+                self.master_msg = zmq_addr(8081, host=host)
+                self.master_pong = zmq_addr(8080, host=host)
+                self.semaphore.release()
+
             elif command == 'UPDATE':
                 print('UPDATING')
                 mss = msg['missing']
@@ -78,11 +90,19 @@ class BackupNode(object):
     def log_in_master(self):
         """ Log in the current master and retry waiting for scheduler backup """
         while True:
-            s = self.zmq_context.socket(zmq.PUSH)
-            s.connect(self.master_msg)
-            s.send_serialized(['BACKUP', {'addr': self.addr}], msg_serialize)
+            sock = self.zmq_context.socket(zmq.PULL)
+            port = sock.bind_to_random_port(f'tcp://{self.host}')
 
-            command, msg = self.socket.recv_serialized(msg_deserialize)
+            s = self.zmq_context.socket(zmq.PUSH)
+            self.semaphore.acquire()
+            s.connect(self.master_msg)
+            self.semaphore.release()
+            print(self.master_msg)
+            
+            s.send_serialized(['BACKUP', {'addr': self.addr, 'reply': zmq_addr(port, host=self.host)}], msg_serialize)
+
+            command, msg = sock.recv_serialized(msg_deserialize)
+                
             if command == 'SCHEDULER':
                 print('First RECV')
                 self.semaphore.acquire()
@@ -92,16 +112,18 @@ class BackupNode(object):
                 self.semaphore.release()
                 break
             else:
-                print(command)    
+                print(command)
+
 
     def ping_to_master(self):
-        c = zmq.Context()
-        s = c.socket(zmq.PULL)
-        port = s.bind_to_random_port('tcp://127.0.0.1') #at moment
+        s = self.zmq_context.socket(zmq.PULL)
+        port = s.bind_to_random_port(f'tcp://{self.host}') #at moment
 
-        sender = c.socket(zmq.PUSH)
+        sender = self.zmq_context.socket(zmq.PUSH)
+        self.semaphore.acquire()
         sender.connect(self.master_msg)
-        sender.send_serialized(['CHECK', { 'port': port }], msg_serialize)
+        self.semaphore.release()
+        sender.send_serialized(['CHECK', { 'addr': zmq_addr(port, host=self.host) }], msg_serialize)
         
         poller = zmq.Poller()
         poller.register(s, zmq.POLLIN)
@@ -116,21 +138,24 @@ class BackupNode(object):
     def select_master(self):
         for b in self.backups:
             sender = self.zmq_context.socket(zmq.PUSH)
-            sender.connect(zmq_addr(b))
+            sender.connect(b)
             sender.send_serialized(['VOTE', None], msg_serialize)
 
         time.sleep(2)
 
         if self.vote:
-            s = self.zmq_context.socket(zmq.PUSH)
-            s.connect(zmq_addr(self.addr))
-            s.send_serialized(['kill', None], msg_serialize)
-
             new_master = MasterNode()
             if self.tracker_backup:
                 new_master.tracker = self.tracker_backup
                 new_master.backups = self.backups
+                new_master.send_identity()
+
+            s = self.zmq_context.socket(zmq.PUSH)
+            s.connect(self.addr)
+            s.send_serialized(['kill', None], msg_serialize)
+            
             return new_master
         else:
             #reset votes
             self.vote = True
+            time.sleep(2)

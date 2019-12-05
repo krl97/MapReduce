@@ -1,5 +1,5 @@
 from uuid import uuid1
-from .utils import chunks, str_hash
+from .utils import chunks, str_hash, zmq_addr
 from os.path import isdir, relpath
 
 #Task State
@@ -155,9 +155,10 @@ class Scheduler(object):
         
     def reduce_task(self, msg):
         addr = msg['addr']
+        filename = msg['filename']
         res = msg['output']
         assert isdir(self.output_folder), 'The directory don\'t exist'
-        name = f'{relpath(self.output_folder)}/{addr}'
+        name = f'{relpath(self.output_folder)}/{filename}'
         f = open(name, 'a')
         f.writelines('\n'.join(f'{ikey}-{val}' for ikey, val in res))
         f.write('\n')
@@ -231,9 +232,9 @@ class JTask(object):
 class Worker(object):
     """ Represents a Worker for the Scheduler """
 
-    def __init__(self, idle, addr):
+    def __init__(self, idle, addr, pong_addr):
         self.addr = addr
-        self.pong_addr = str(int(self.addr) + 1)
+        self.pong_addr = pong_addr
         self.idle = idle
 
     @property
