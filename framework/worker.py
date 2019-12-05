@@ -3,21 +3,31 @@
     Warning: Ports 8080 and 8081 are reserved for the JobTracker(MasterNode) 
 """
 
-from .utils import zmq_addr, msg_deserialize, msg_serialize, get_host_ip
+from .utils import zmq_addr, msg_deserialize, msg_serialize, get_host_ip, do_broadcast
 from threading import Semaphore, Thread
 from os.path import relpath, isdir
 from uuid import uuid1
+import time
 import dill
 import zmq
 
 class WorkerNode(object):
-    def __init__(self, addr):
-        self.addr = addr
+    """ 8082 -> msg | 8083 -> paddr """
+    def __init__(self):
+        self.host = get_host_ip()
+        self.addr = zmq_addr(8082, host=self.host)
+        self.paddr = zmq_addr(8083, host=self.host)
+
         self.idle = uuid1().hex
 
-        #master address
-        self.master_pong = zmq_addr(8080)
-        self.master_msg = zmq_addr(8081)
+        #get master address using broadcast
+        master_ip = do_broadcast(self.host, 6666)
+
+        if not master_ip:
+            raise Exception('Master not found in the network')
+
+        self.master_pong = zmq_addr(8080, host=master_ip)
+        self.master_msg = zmq_addr(8081, host=master_ip)
 
         self.zmq_context = zmq.Context()
 
@@ -26,11 +36,10 @@ class WorkerNode(object):
         self.semaphore = Semaphore()
 
         self.socket = self.zmq_context.socket(zmq.PULL)
-        self.socket.bind(zmq_addr(self.addr))
+        self.socket.bind(self.addr)
         
-        self.paddr = str(int(self.addr) + 1)
         self.socket_pong = self.zmq_context.socket(zmq.PULL)
-        self.socket_pong.bind(zmq_addr(self.paddr))
+        self.socket_pong.bind(self.paddr)
 
     def __call__(self):
         pong_thread = Thread(target=self.pong_thread, name='pong_thread')
@@ -49,13 +58,20 @@ class WorkerNode(object):
                 self.registered = True
                 self.semaphore.release()
 
+            elif command == 'NEW_MASTER':
+                host = msg['host']
+                print(host)
+                self.master_msg = zmq_addr(8081, host=host)
+                self.master_pong = zmq_addr(8080, host=host)
+                print(self.master_msg, self.master_pong)
+
             elif command == 'SHUTDOWN':
                 break
 
             elif command == 'TASK':
                 task = msg['task']
                 func = f'{task.Type}_task'
-                res = WorkerNode.__dict__[func](self, task.Body)
+                res = WorkerNode.__dict__[func](self, task.Body, task.Id)
                 self.send_accomplish(task.Id, res)
 
             else:
@@ -78,12 +94,11 @@ class WorkerNode(object):
     def say_hello(self):
         sock = self.zmq_context.socket(zmq.PUSH)
         sock.connect(self.master_msg)
-        sock.send_serialized(['HELLO', {'addr' : self.addr, 'idle' : self.idle }], msg_serialize)
+        sock.send_serialized(['HELLO', {'addr' : self.addr, 'paddr': self.paddr, 'idle' : self.idle }], msg_serialize)
         sock.close()
 
     def pong(self):
-        temp_ctx = zmq.Context()
-        sock = temp_ctx.socket(zmq.PUSH)
+        sock = self.zmq_context.socket(zmq.PUSH)
         sock.connect(self.master_pong)
         sock.send_serialized(['PONG', {'addr': self.addr}], msg_serialize)
         sock.close()
@@ -95,7 +110,7 @@ class WorkerNode(object):
         print('DONE')
         sock.close()
 
-    def map_task(self, task_body):
+    def map_task(self, task_body, task_id):
         res = [ ]
         chunk = task_body['chunk']
         mapper = task_body['mapper']
@@ -105,10 +120,10 @@ class WorkerNode(object):
         res = mapper.groupby(res)
         return { 'ikeys': res, 'addr': self.addr }
 
-    def reduce_task(self, task_body):
+    def reduce_task(self, task_body, task_id):
         partition = task_body['partition']
         reducer = task_body['reducer']
         res = [ ]
         for ikey, values in partition:
             res.append((ikey, reducer.reduce(ikey, values)))
-        return { 'output': res, 'addr': self.addr }
+        return { 'output': res, 'addr': self.addr, 'filename': task_id }

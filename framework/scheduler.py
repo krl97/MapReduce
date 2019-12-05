@@ -1,5 +1,5 @@
 from uuid import uuid1
-from .utils import chunks, str_hash
+from .utils import chunks, str_hash, zmq_addr
 from os.path import isdir, relpath
 
 #Task State
@@ -69,7 +69,6 @@ class Scheduler(object):
         """ Returns a function to init the next state, None if the current state
         still in progress, next_state raise Exception if scheduler workflow ends """
         if self.current_state == FINISH:
-            print('HERE')
             raise Exception('Scheduler in finish state, submit a new job')
         
         if self.move_next:
@@ -155,9 +154,10 @@ class Scheduler(object):
         
     def reduce_task(self, msg):
         addr = msg['addr']
+        filename = msg['filename']
         res = msg['output']
         assert isdir(self.output_folder), 'The directory don\'t exist'
-        name = f'{relpath(self.output_folder)}/{addr}'
+        name = f'{relpath(self.output_folder)}/{filename}'
         f = open(name, 'a')
         f.writelines('\n'.join(f'{ikey}-{val}' for ikey, val in res))
         f.write('\n')
@@ -185,7 +185,9 @@ class Scheduler(object):
             self.tasks_pending.append(id)
 
     def init_finish(self):
+        raddr = self.config.r_addr
         self._reset()
+        return raddr
 
     def _reset(self):
         self.config = None
@@ -231,9 +233,9 @@ class JTask(object):
 class Worker(object):
     """ Represents a Worker for the Scheduler """
 
-    def __init__(self, idle, addr):
+    def __init__(self, idle, addr, pong_addr):
         self.addr = addr
-        self.pong_addr = str(int(self.addr) + 1)
+        self.pong_addr = pong_addr
         self.idle = idle
 
     @property
