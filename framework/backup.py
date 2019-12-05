@@ -12,8 +12,8 @@ class BackupNode(object):
         self.addr = zmq_addr(8084, host=self.host)
 
         # predefined master directions
-        self.master_msg = zmq_addr(8081, host="192.168.43.182")
-        self.master_pong = zmq_addr(8080, host="192.168.43.182")
+        self.master_msg = zmq_addr(8081)
+        self.master_pong = zmq_addr(8080)
 
         self.zmq_context = zmq.Context()
         self.tracker_backup = None
@@ -121,7 +121,6 @@ class BackupNode(object):
 
         sender = self.zmq_context.socket(zmq.PUSH)
         self.semaphore.acquire()
-        print('ip_master', self.master_msg)
         sender.connect(self.master_msg)
         self.semaphore.release()
         sender.send_serialized(['CHECK', { 'addr': zmq_addr(port, host=self.host) }], msg_serialize)
