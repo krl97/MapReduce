@@ -25,16 +25,11 @@ class MasterNode(object):
         self.semaphore = Semaphore()
         self.backups = [ ]
 
-        self.say_hi = False
-
         self.tracker = JobsTracker() 
         
         self.results = [ ]
 
     def __call__(self):
-        if self.say_hi:
-            self.send_identity()
-
         # here start thread for incoming message from workers
         msg_thread = Thread(target=self.msg_thread, name="msg_thread")
         ping_thread = Thread(target=self.ping_thread, name="ping_thread")
@@ -172,7 +167,7 @@ class MasterNode(object):
             elif command == 'BACKUP':
                 self.semaphore.acquire()
                 sock = self.zmq_context.socket(zmq.PUSH)
-                sock.connect(msg['addr'])
+                sock.connect(msg['reply'])
                 print(msg['addr'])
                 sock.send_serialized(['SCHEDULER', { 'scheduler': self.tracker, 'backups': self.backups }], msg_serialize)
                 self.backups.append(msg['addr'])
@@ -220,13 +215,13 @@ class MasterNode(object):
 
     def send_identity(self):
         nodes = [w.Addr for w in list(self.tracker.scheduler.workers.keys())]
-        nodes += self.backups
+        nodes = list(self.backups) + nodes
         for node in nodes:
             s = self.zmq_context.socket(zmq.PUSH)
             s.connect(node)
             s.send_serialized(['NEW_MASTER', {'host': self.host}], msg_serialize)
 
-        time.sleep(1) 
+        time.sleep(1)
 
     def broadcast_thread(self):
         pass 
