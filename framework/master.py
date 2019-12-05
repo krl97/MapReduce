@@ -51,7 +51,9 @@ class MasterNode(object):
                 try:
                     nxt_state = self.tracker.scheduler.next_state()
                     if nxt_state:   
-                        nxt_state()
+                        raddr = nxt_state()
+                        if raddr:
+                            self.send_to_client(raddr, 'JOB ENDED', None)
                     else:
                         next_task = self.tracker.scheduler.next_task()
 
@@ -228,3 +230,8 @@ class MasterNode(object):
             s.send_serialized(['NEW_MASTER', {'host': self.host}], msg_serialize)
 
         time.sleep(1) 
+
+    def send_to_client(self, addr, status, msg):
+        s = self.zmq_context.socket(zmq.PUSH)
+        s.connect(addr)
+        s.send_serialized([status, msg], msg_serialize)

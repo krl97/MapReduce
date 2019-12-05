@@ -69,7 +69,6 @@ class Scheduler(object):
         """ Returns a function to init the next state, None if the current state
         still in progress, next_state raise Exception if scheduler workflow ends """
         if self.current_state == FINISH:
-            print('HERE')
             raise Exception('Scheduler in finish state, submit a new job')
         
         if self.move_next:
@@ -186,7 +185,9 @@ class Scheduler(object):
             self.tasks_pending.append(id)
 
     def init_finish(self):
+        raddr = self.config.r_addr
         self._reset()
+        return raddr
 
     def _reset(self):
         self.config = None
