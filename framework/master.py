@@ -1,4 +1,4 @@
-from .utils import zmq_addr, msg_deserialize, msg_serialize, get_host_ip
+from .utils import zmq_addr, msg_deserialize, msg_serialize, get_host_ip, waiting_to_broadcast
 from .scheduler import Scheduler, Worker, JTask, JobsTracker
 from threading import Thread, Semaphore
 import dill
@@ -140,7 +140,7 @@ class MasterNode(object):
                     self.semaphore.release()
 
 
-            time.sleep(2)        
+            time.sleep(3)        
 
     def msg_thread(self):
         while True: #listen messages forever
@@ -225,3 +225,8 @@ class MasterNode(object):
             s = self.zmq_context.socket(zmq.PUSH)
             s.connect(node)
             s.send_serialized(['NEW_MASTER', {'host': self.host}], msg_serialize)
+
+        time.sleep(1) 
+
+    def broadcast_thread(self):
+        pass 

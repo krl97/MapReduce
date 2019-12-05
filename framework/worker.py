@@ -55,8 +55,10 @@ class WorkerNode(object):
 
             elif command == 'NEW_MASTER':
                 host = msg['host']
+                print(host)
                 self.master_msg = zmq_addr(8081, host=host)
                 self.master_pong = zmq_addr(8080, host=host)
+                print(self.master_msg, self.master_pong)
 
             elif command == 'SHUTDOWN':
                 break
@@ -91,8 +93,7 @@ class WorkerNode(object):
         sock.close()
 
     def pong(self):
-        temp_ctx = zmq.Context()
-        sock = temp_ctx.socket(zmq.PUSH)
+        sock = self.zmq_context.socket(zmq.PUSH)
         sock.connect(self.master_pong)
         sock.send_serialized(['PONG', {'addr': self.addr}], msg_serialize)
         sock.close()

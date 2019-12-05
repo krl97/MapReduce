@@ -41,6 +41,7 @@ class BackupNode(object):
             # here start leader selection (at moment just start a new master)    
             print('WAKE UP', self.backups)
             master = self.select_master()
+            master.say_hi = True
             print('DECISION')
             if master:
                 master()
