@@ -8,7 +8,6 @@ class BackupNode(object):
     """ msg -> 8084 """
     def __init__(self):
         self.host = get_host_ip()
-        print(self.host)
         self.addr = zmq_addr(8084, host=self.host)
 
         #get master address using broadcast
@@ -32,7 +31,7 @@ class BackupNode(object):
         self.socket.bind(self.addr)
 
     def __call__(self):
-        print('Starter')
+        print('BACKUP NODE')
         
         thread = Thread(target=self.thread_recv, name='recv')
         thread.start()
@@ -40,14 +39,14 @@ class BackupNode(object):
         self.log_in_master()
 
         while True:
-            print('START')
+            print('STARTING BACKUP')
             while self.ping_to_master():
                 pass
 
             # here start leader selection (at moment just start a new master)    
-            print('WAKE UP', self.backups)
+            print('STARTING POLL WITH:', self.backups)
             master = self.select_master()
-            print('DECISION')
+            print('DECIDE NEW MASTER')
             if master:
                 master()
 
@@ -56,7 +55,6 @@ class BackupNode(object):
             command, msg = self.socket.recv_serialized(msg_deserialize)
             
             if command == 'SCHEDULER':
-                print('RECV')
                 self.tracker_backup = msg['scheduler']
             
             elif command == 'PING':
@@ -68,21 +66,19 @@ class BackupNode(object):
 
             elif command == 'NEW_MASTER':
                 host = msg['host']
-                print('new_master', host)
+                print('NEW MASTER:', host)
                 self.semaphore.acquire()
                 self.master_msg = zmq_addr(8081, host=host)
                 self.master_pong = zmq_addr(8080, host=host)
                 self.semaphore.release()
 
             elif command == 'UPDATE':
-                print('UPDATING')
                 mss = msg['missing']
                 self.semaphore.acquire()
                 try:
                     self.backups.remove(mss)
                 except:
                     pass
-                print('After:', self.backups)
                 self.semaphore.release()
 
             elif command == 'VOTE':
@@ -102,22 +98,20 @@ class BackupNode(object):
             self.semaphore.acquire()
             s.connect(self.master_msg)
             self.semaphore.release()
-            print(self.master_msg)
             
             s.send_serialized(['BACKUP', {'addr': self.addr, 'reply': zmq_addr(port, host=self.host)}], msg_serialize)
 
             command, msg = sock.recv_serialized(msg_deserialize)
                 
             if command == 'SCHEDULER':
-                print('First RECV')
+                print('LOGGING IN MASTER')
                 self.semaphore.acquire()
                 self.tracker_backup = msg['scheduler']
                 self.backups = msg['backups']
-                print(self.backups, msg['backups'])
                 self.semaphore.release()
                 break
             else:
-                print(command)
+                print('UNKNOWN COMMAND:', command)
 
 
     def ping_to_master(self):

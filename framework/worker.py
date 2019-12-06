@@ -50,8 +50,7 @@ class WorkerNode(object):
                 self.say_hello()
 
             command, msg = self.socket.recv_serialized(msg_deserialize)
-            print(command, msg)
-
+            
             if command == 'REPLY':
                 print(f'Worker: {self.addr} -> Receiving REPLY from master')
                 self.semaphore.acquire()
@@ -60,16 +59,15 @@ class WorkerNode(object):
 
             elif command == 'NEW_MASTER':
                 host = msg['host']
-                print(host)
                 self.master_msg = zmq_addr(8081, host=host)
                 self.master_pong = zmq_addr(8080, host=host)
-                print(self.master_msg, self.master_pong)
-
+                
             elif command == 'SHUTDOWN':
                 break
 
             elif command == 'TASK':
                 task = msg['task']
+                print('TASK:', 'TYPE ->', task.Type, ' ID ->', task.Id)
                 func = f'{task.Type}_task'
                 res = WorkerNode.__dict__[func](self, task.Body, task.Id)
                 self.send_accomplish(task.Id, res)
@@ -82,7 +80,6 @@ class WorkerNode(object):
             command, msg = self.socket_pong.recv_serialized(msg_deserialize)
 
             if command == 'PING':
-                print('sending pong')
                 self.pong()
 
             elif command == 'kill':
@@ -107,7 +104,7 @@ class WorkerNode(object):
         sock = self.zmq_context.socket(zmq.PUSH)
         sock.connect(self.master_msg)
         sock.send_serialized(['DONE', {'task': task, 'response': response}], msg_serialize)
-        print('DONE')
+        print('TASK DONE')
         sock.close()
 
     def map_task(self, task_body, task_id):

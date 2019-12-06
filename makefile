@@ -1,7 +1,5 @@
-requirements:
-	pip install ./requirements/dill-0.3.1.1.tar.gz"
-	pip install ./requirements/more-itertools-8.0.0.tar.gz
-	pip install ./requirements/pyzmq-18.1.1.tar.gz
+build:
+	pip install -r requirements.txt
 
 testfolder:
 	mkdir test/
@@ -9,13 +7,11 @@ testfolder:
 clean:
 	rm test/*
 
-run: testfolder
-	echo Running Server in Foreground
+master:
 	python master.py
 
-	echo -----------------------------------------------
-	echo Sending Clients to Background
-	python slave.py "8082" 1 &
-	python slave.py "8084" 2 &
-	python slave.py "8086" 3 &
-	python slave.py "8088" 4 &
+backup:
+	python b_master.py
+
+worker:
+	python slave.py

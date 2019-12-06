@@ -9,9 +9,7 @@ import zmq
 class MasterNode(object):
     """ msg -> 8081 | ping -> 8080 """
     def __init__(self):
-        #get pc ip
         self.host = get_host_ip()
-        print(self.host)
         self.addr_msg = zmq_addr(8081, host=self.host)
         self.addr_pong = zmq_addr(8080, host=self.host)
         
@@ -30,7 +28,6 @@ class MasterNode(object):
         self.results = [ ]
 
     def __call__(self):
-        # here start thread for incoming message from workers
         _msg_thread = Thread(target=self.msg_thread, name="msg_thread")
         _ping_thread = Thread(target=self.ping_thread, name="ping_thread")
         _broadcast_thread = Thread(target=self.broadcast_thread, name="broadcast_thread")
@@ -38,7 +35,7 @@ class MasterNode(object):
         _msg_thread.start()
         _ping_thread.start() 
 
-        print('INIT')
+        print('NODE MASTER')
 
         while True:
             print('-- STARTING MASTER --')
@@ -64,7 +61,7 @@ class MasterNode(object):
                     pass
 
                 if self.tracker.next_job():
-                    print('--- NEXT ---')
+                    print('--- STARTING THE NEXT JOB ---')
 
                 self.semaphore.release()                    
 
@@ -91,8 +88,6 @@ class MasterNode(object):
             workers = [w for w in list(self.tracker.scheduler.workers.keys())]
             self.semaphore.release()
 
-            print(workers)
-            
             for worker in workers:
                 sock = c.socket(zmq.PUSH)
                 sock.connect(worker.pong_addr)
@@ -106,7 +101,8 @@ class MasterNode(object):
                     command, msg = self.socket_pong.recv_serialized(msg_deserialize, zmq.NOBLOCK)
                     
                     if command == 'PONG' and msg['addr'] != worker.Addr:
-                        print('VIEW:', msg['addr'], worker.Addr)
+                        # print('VIEW:', msg['addr'], worker.Addr)
+                        pass
                     
                     elif command == 'kill':
                         return
@@ -132,8 +128,9 @@ class MasterNode(object):
                     command, msg = self.socket_pong.recv_serialized(msg_deserialize, zmq.NOBLOCK)
                     
                     if command == 'PONG' and msg['addr'] != b:
-                        print('VIEW:', msg['addr'], b)
-                    
+                        #print('VIEW:', msg['addr'], b)
+                        pass
+
                     elif command == 'kill':
                         return
                 else:
@@ -146,7 +143,7 @@ class MasterNode(object):
             time.sleep(3)        
 
     def msg_thread(self):
-        while True: #listen messages forever
+        while True:
             command, msg = self.socket_msg.recv_serialized(msg_deserialize)
             
             if command == 'HELLO':
@@ -176,10 +173,9 @@ class MasterNode(object):
                 self.semaphore.acquire()
                 sock = self.zmq_context.socket(zmq.PUSH)
                 sock.connect(msg['reply'])
-                print(msg['addr'])
+                print('NEW BACKUP IN CLUSTER:', msg['addr'])
                 sock.send_serialized(['SCHEDULER', { 'scheduler': self.tracker, 'backups': self.backups }], msg_serialize)
                 self.backups.append(msg['addr'])
-                print(self.backups)
                 self.semaphore.release()
 
             elif command == 'CHECK':
@@ -192,7 +188,7 @@ class MasterNode(object):
 
             else:
                 # report error
-                print(command)
+                print('UNKNOWN COMMAND:', command)
 
     def send_reply(self, worker):
         sock = self.zmq_context.socket(zmq.PUSH)
